@@ -38,7 +38,7 @@ export default function Base({ buttonText, jumpText, jumpPage, onSubmit }: Props
                 <Form>
                     <Label style={styles.label}>用户名</Label>
                     <TextInput
-                        style={[styles.input]}
+                        style={[styles.input, inputStyles]}
                         // @ts-ignore
                         ref={$username}
                         clearButtonMode="while-editing"
@@ -48,7 +48,7 @@ export default function Base({ buttonText, jumpText, jumpPage, onSubmit }: Props
                     />
                     <Label style={styles.label}>密码</Label>
                     <TextInput
-                        style={[styles.input]}
+                        style={[styles.input, inputStyles]}
                         // @ts-ignore
                         ref={$password}
                         secureTextEntry
@@ -58,10 +58,10 @@ export default function Base({ buttonText, jumpText, jumpPage, onSubmit }: Props
                         autoCompleteType="password"
                     />
                 </Form>
-                <Button primary block style={styles.button} onPress={handlePress}>
+                <Button primary block style={[styles.button, buttonStyles]} onPress={handlePress}>
                     <Text style={styles.buttonText}>{buttonText}</Text>
                 </Button>
-                <Button transparent style={styles.signup} onPress={handleJump}>
+                <Button transparent style={[styles.signup, buttonStyles]} onPress={handleJump}>
                     <Text style={styles.signupText}>{jumpText}</Text>
                 </Button>
             </View>
@@ -93,12 +93,8 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     input: {
-        height: 42,
+        height: 48,
         fontSize: 16,
-        borderRadius: 6,
         marginBottom: 12,
-        paddingLeft: 6,
-        borderWidth: 1,
-        borderColor: '#777',
     },
 });

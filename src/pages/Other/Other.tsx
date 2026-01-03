@@ -11,6 +11,7 @@ import { getStorageValue, removeStorageValue } from '../../utils/storage';
 import appInfo from '../../../app.json';
 import Avatar from '../../components/Avatar';
 import PrivacyPolicy, { PrivacyPolicyStorageKey } from './PrivacyPolicy';
+import { buttonStyles } from '../../utils/styles';
 
 function getIsNight() {
     const hour = new Date().getHours();
@@ -77,7 +78,7 @@ function Other() {
                 <List style={styles.list}>
                     <ListItem
                         icon
-                        onPress={() => Linking.openURL('https://github.com/yinxin630/fiora-app')}
+                        onPress={() => Linking.openURL('https://github.com/jonas-pi/fiora')}
                     >
                         <Body>
                             <Text style={styles.listItemTitle}>源码</Text>
@@ -88,13 +89,13 @@ function Other() {
                     </ListItem>
                     <ListItem icon onPress={() => Linking.openURL('https://www.suisuijiang.com')}>
                         <Body>
-                            <Text style={styles.listItemTitle}>作者</Text>
+                            <Text style={styles.listItemTitle}>原作者鸣谢</Text>
                         </Body>
                         <Right>
                             <Icon active name="arrow-forward" style={styles.listItemArrow} />
                         </Right>
                     </ListItem>
-                    <ListItem icon onPress={() => Linking.openURL('https://fiora.suisuijiang.com')}>
+                    <ListItem icon onPress={() => Linking.openURL('https://fiora.nasforjonas.xyz')}>
                         <Body>
                             <Text style={styles.listItemTitle}>fiora 网页版</Text>
                         </Body>
@@ -105,11 +106,11 @@ function Other() {
                 </List>
             </Content>
             {isLogin ? (
-                <Button danger block style={styles.logoutButton} onPress={logout}>
+                <Button danger block style={[styles.logoutButton, buttonStyles]} onPress={logout}>
                     <Text>退出登录</Text>
                 </Button>
             ) : (
-                <Button block style={styles.logoutButton} onPress={login}>
+                <Button block style={[styles.logoutButton, buttonStyles]} onPress={login}>
                     <Text>登录 / 注册</Text>
                 </Button>
             )}
@@ -118,7 +119,7 @@ function Other() {
                     Copyright© 2015-
                     {new Date().getFullYear()}
                     {' '}
-                    碎碎酱
+                    碎碎酱 | Fork by jonas-pi
                 </Text>
             </View>
             <PrivacyPolicy visible={showPrivacyPolicy} onClose={() => togglePrivacyPolicy(false)} />

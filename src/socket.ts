@@ -38,7 +38,8 @@ const options = {
     transports: ['websocket'],
 };
 
-const host = 'https://fiora.suisuijiang.com';
+// Socket.IO服务器地址
+const host = 'https://fiora.nasforjonas.xyz';
 const socket = IO(host, options);
 
 function fetch<T = any>(

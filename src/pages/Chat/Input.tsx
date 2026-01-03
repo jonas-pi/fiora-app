@@ -17,11 +17,12 @@ import action from '../../state/action';
 import fetch from '../../utils/fetch';
 import { isiOS } from '../../utils/platform';
 import expressions from '../../utils/expressions';
+import { Toast } from 'native-base';
 
 import Expression from '../../components/Expression';
 import { useIsLogin, useStore, useUser } from '../../hooks/useStore';
 import { Message } from '../../types/redux';
-import uploadFile from '../../utils/uploadFile';
+import uploadFileWithProgress from '../../utils/uploadFileWithProgress';
 
 const { width: ScreenWidth } = Dimensions.get('window');
 const ExpressionSize = (ScreenWidth - 16) / 10;
@@ -39,6 +40,7 @@ export default function Input({ onHeightChange }: Props) {
     const [showFunctionList, toggleShowFunctionList] = useState(true);
     const [showExpression, toggleShowExpression] = useState(false);
     const [cursorPosition, setCursorPosition] = useState({ start: 0, end: 0 });
+    const [isUploading, setIsUploading] = useState(false); // 添加上传状态锁
 
     const $input = useRef<TextInput>();
 
@@ -69,8 +71,11 @@ export default function Input({ onHeightChange }: Props) {
             loading: true,
         };
 
-        if (type === 'image') {
+        // 图片和文件消息初始进度为 0
+        if (type === 'image' || type === 'file') {
             newMessage.percent = 0;
+        } else {
+            newMessage.percent = 100;
         }
         action.addLinkmanMessage(focus, newMessage);
 
@@ -141,16 +146,51 @@ export default function Input({ onHeightChange }: Props) {
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             base64: true,
+            quality: 0.8, // 压缩质量，减少文件大小
         });
 
-        if (!result.cancelled) {
+        if (!result.cancelled && result.base64) {
+            // 防止并发上传
+            if (isUploading) {
+                Toast.show({ text: '正在上传图片，请稍候...', type: 'warning' });
+                return;
+            }
+            
+            setIsUploading(true);
             const id = addSelfMessage(
                 'image',
                 `${result.uri}?width=${result.width}&height=${result.height}`,
             );
             const key = `ImageMessage/${user._id}_${Date.now()}`;
-            const imageUrl = await uploadFile(result.base64 as string, key, true);
-            sendMessage(id, 'image', `${imageUrl}?width=${result.width}&height=${result.height}`);
+            try {
+                const imageUrl = await uploadFileWithProgress(
+                    result.base64 as string,
+                    key,
+                    (progress) => {
+                        // 更新上传进度
+                        action.updateSelfMessage(focus, id, {
+                            percent: progress,
+                        });
+                    },
+                );
+                // 上传成功后发送消息
+                const [err, res] = await fetch('sendMessage', {
+                    to: focus,
+                    type: 'image',
+                    content: `${imageUrl}?width=${result.width}&height=${result.height}`,
+                });
+                if (!err) {
+                    res.loading = false;
+                    res.percent = 100;
+                    action.updateSelfMessage(focus, id, res);
+                }
+            } catch (error: any) {
+                // 上传失败，删除本地消息
+                action.deleteLinkmanMessage(focus, id);
+                Toast.show({ text: '上传图片失败', type: 'danger' });
+            } finally {
+                setIsUploading(false);
+            }
         }
     }
 
@@ -170,16 +210,51 @@ export default function Input({ onHeightChange }: Props) {
         const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             base64: true,
+            quality: 0.8, // 压缩质量，减少文件大小
         });
 
-        if (!result.cancelled) {
+        if (!result.cancelled && result.base64) {
+            // 防止并发上传
+            if (isUploading) {
+                Toast.show({ text: '正在上传图片，请稍候...', type: 'warning' });
+                return;
+            }
+            
+            setIsUploading(true);
             const id = addSelfMessage(
                 'image',
                 `${result.uri}?width=${result.width}&height=${result.height}`,
             );
             const key = `ImageMessage/${user._id}_${Date.now()}`;
-            const imageUrl = await uploadFile(result.base64 as string, key, true);
-            sendMessage(id, 'image', `${imageUrl}?width=${result.width}&height=${result.height}`);
+            try {
+                const imageUrl = await uploadFileWithProgress(
+                    result.base64 as string,
+                    key,
+                    (progress) => {
+                        // 更新上传进度
+                        action.updateSelfMessage(focus, id, {
+                            percent: progress,
+                        });
+                    },
+                );
+                // 上传成功后发送消息
+                const [err, res] = await fetch('sendMessage', {
+                    to: focus,
+                    type: 'image',
+                    content: `${imageUrl}?width=${result.width}&height=${result.height}`,
+                });
+                if (!err) {
+                    res.loading = false;
+                    res.percent = 100;
+                    action.updateSelfMessage(focus, id, res);
+                }
+            } catch (error: any) {
+                // 上传失败，删除本地消息
+                action.deleteLinkmanMessage(focus, id);
+                Toast.show({ text: '上传图片失败', type: 'danger' });
+            } finally {
+                setIsUploading(false);
+            }
         }
     }
 
@@ -271,13 +346,13 @@ const styles = StyleSheet.create({
     },
     input: {
         flex: 1,
-        height: 36,
-        paddingLeft: 8,
-        paddingRight: 8,
+        height: 40,
+        paddingLeft: 12,
+        paddingRight: 12,
         backgroundColor: 'white',
         borderWidth: 1,
         borderColor: '#e5e5e5',
-        borderRadius: 5,
+        borderRadius: 20, // 更现代的圆角，类似聊天气泡
     },
     sendButton: {
         width: 50,
@@ -286,11 +361,13 @@ const styles = StyleSheet.create({
         paddingLeft: 10,
     },
     button: {
-        height: 36,
+        height: 40,
         marginTop: 4,
         marginLeft: 10,
         marginRight: 10,
         marginBottom: 8,
+        borderRadius: 12, // 添加圆角
+        overflow: 'hidden', // 确保圆角生效
     },
     buttonText: {
         color: 'white',

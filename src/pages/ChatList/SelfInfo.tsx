@@ -1,6 +1,7 @@
 import { Text, View } from 'native-base';
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, TouchableOpacity } from 'react-native';
+import { Actions } from 'react-native-router-flux';
 import Avatar from '../../components/Avatar';
 import { useIsLogin, useStore, useTheme, useUser } from '../../hooks/useStore';
 
@@ -16,8 +17,12 @@ function SelfInfo() {
 
     const { avatar, username } = user;
 
+    function handlePress() {
+        Actions.push('selfSettings');
+    }
+
     return (
-        <View style={[styles.container]}>
+        <TouchableOpacity style={[styles.container]} onPress={handlePress} activeOpacity={0.7}>
             <View>
                 <Avatar src={avatar} size={32} />
                 <View style={[styles.onlineStatus, connect ? styles.online : styles.offline]} />
@@ -25,7 +30,7 @@ function SelfInfo() {
             <View>
                 <Text style={[styles.nickname, { color: primaryTextColor10 }]}>{username}</Text>
             </View>
-        </View>
+        </TouchableOpacity>
     );
 }
 

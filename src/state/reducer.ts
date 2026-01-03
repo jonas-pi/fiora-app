@@ -197,12 +197,18 @@ const reducer = produce((state: State = initialState, action: ActionTypes) => {
                 (linkman) => linkman._id === action.linkmanId,
             );
             if (targetLinkman) {
-                if (state.focus !== targetLinkman._id) {
-                    targetLinkman.unread += 1;
-                }
-                targetLinkman.messages.push(convertMessage(action.message));
-                if (targetLinkman.messages.length > 500) {
-                    targetLinkman.messages.slice(250);
+                // 检查消息是否已存在，避免重复添加
+                const messageExists = targetLinkman.messages.some(
+                    (msg) => msg._id === action.message._id,
+                );
+                if (!messageExists) {
+                    if (state.focus !== targetLinkman._id) {
+                        targetLinkman.unread += 1;
+                    }
+                    targetLinkman.messages.push(convertMessage(action.message));
+                    if (targetLinkman.messages.length > 500) {
+                        targetLinkman.messages.slice(250);
+                    }
                 }
             }
             return state;
@@ -212,7 +218,17 @@ const reducer = produce((state: State = initialState, action: ActionTypes) => {
                 (linkman) => linkman._id === action.linkmanId,
             );
             if (targetLinkman) {
-                targetLinkman.messages.unshift(...action.messages.map(convertMessage));
+                // 获取现有消息的 ID 集合，用于去重
+                const existingMessageIds = new Set(
+                    targetLinkman.messages.map((msg) => msg._id),
+                );
+                // 过滤掉已存在的消息，只添加新消息
+                const newMessages = action.messages
+                    .filter((msg) => !existingMessageIds.has(msg._id))
+                    .map(convertMessage);
+                if (newMessages.length > 0) {
+                    targetLinkman.messages.unshift(...newMessages);
+                }
             }
             return state;
         }

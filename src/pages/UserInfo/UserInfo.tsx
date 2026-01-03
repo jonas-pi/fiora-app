@@ -16,6 +16,7 @@ import {
 } from '../../service';
 import getFriendId from '../../utils/getFriendId';
 import Toast from '../../components/Toast';
+import { buttonStyles } from '../../utils/styles';
 
 type Props = {
     user: {
@@ -121,21 +122,21 @@ function UserInfo({ user }: Props) {
                 <View style={styles.buttonContainer}>
                     {isFriend ? (
                         <>
-                            <Button primary block style={styles.button} onPress={handleSendMessage}>
+                            <Button primary block style={[styles.button, buttonStyles]} onPress={handleSendMessage}>
                                 <Text>发送消息</Text>
                             </Button>
                             <Button
                                 primary
                                 block
                                 danger
-                                style={styles.button}
+                                style={[styles.button, buttonStyles]}
                                 onPress={handleDeleteFriend}
                             >
                                 <Text>删除好友</Text>
                             </Button>
                         </>
                     ) : (
-                        <Button primary block style={styles.button} onPress={handleAddFriend}>
+                        <Button primary block style={[styles.button, buttonStyles]} onPress={handleAddFriend}>
                             <Text>加为好友</Text>
                         </Button>
                     )}
@@ -145,7 +146,7 @@ function UserInfo({ user }: Props) {
                                 primary
                                 block
                                 danger
-                                style={styles.button}
+                                style={[styles.button, buttonStyles]}
                                 onPress={handleSealUser}
                             >
                                 <Text>封禁用户</Text>
@@ -154,7 +155,7 @@ function UserInfo({ user }: Props) {
                                 primary
                                 block
                                 danger
-                                style={styles.button}
+                                style={[styles.button, buttonStyles]}
                                 onPress={handleSealIp}
                             >
                                 <Text>封禁 ip</Text>

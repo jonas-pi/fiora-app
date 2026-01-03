@@ -52,8 +52,21 @@ function MessageList({ $scrollView }: Props) {
         const images = imageMessages.map((message) => {
             const url = message.content;
             const parseResult = /width=(\d+)&height=(\d+)/.exec(url);
+            
+            // 处理图片 URL，确保是完整的 URL
+            let imageUrl = url;
+            if (url.startsWith('//')) {
+                imageUrl = `https:${url}`;
+            } else if (url.startsWith('/')) {
+                // 相对路径转换为完整URL
+                imageUrl = `https://fiora.nasforjonas.xyz${url}`;
+            } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                // 如果不是完整 URL，添加服务器域名
+                imageUrl = `https://fiora.nasforjonas.xyz/${url}`;
+            }
+            
             return {
-                url: `${url.startsWith('//') ? 'https:' : ''}${url}`,
+                url: imageUrl,
                 ...(parseResult
                     ? {
                         width: +parseResult[1],
@@ -155,10 +168,12 @@ function MessageList({ $scrollView }: Props) {
         setImageViewerIndex(index);
     }
 
-    function renderMessage(message: MessageType) {
+    function renderMessage(message: MessageType, index: number) {
+        // 使用消息 ID 和索引组合作为 key，确保唯一性
+        // 即使消息 ID 重复，索引也能保证唯一性
         return (
             <Message
-                key={message._id}
+                key={`${message._id}-${index}`}
                 message={message}
                 isSelf={self === message.from._id}
                 shouldScroll={shouldScroll}
@@ -180,14 +195,23 @@ function MessageList({ $scrollView }: Props) {
             scrollEventThrottle={50}
             onScroll={handleScroll}
         >
-            {messages.map((message) => renderMessage(message))}
+            {messages.map((message, index) => renderMessage(message, index))}
             <Modal
                 visible={showImageViewerDialog}
                 transparent
                 onRequestClose={closeImageViewerDialog}
             >
                 <ImageViewer
-                    imageUrls={getImages()}
+                    imageUrls={getImages().map((img) => ({
+                        url: img.url,
+                        props: {
+                            source: {
+                                headers: {
+                                    Referer: referer,
+                                },
+                            },
+                        },
+                    }))}
                     index={imageViewerIndex}
                     onClick={closeImageViewerDialog}
                     onSwipeDown={closeImageViewerDialog}

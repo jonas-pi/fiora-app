@@ -22,6 +22,7 @@ import ChatListRightButton from './pages/ChatList/ChatListRightButton';
 import SearchResult from './pages/SearchResult/SearchResult';
 import GroupInfo from './pages/GroupInfo/GroupInfo';
 import BackButton from './components/BackButton';
+import SelfSettings from './pages/SelfSettings/SelfSettings';
 
 type Props = {
     title: string;
@@ -142,6 +143,12 @@ function App({ title, primaryColor, isLogin }: Props) {
                             key="searchResult"
                             component={SearchResult}
                             title="搜索结果"
+                            {...sceneCommonProps}
+                        />
+                        <Scene
+                            key="selfSettings"
+                            component={SelfSettings}
+                            title="个人设置"
                             {...sceneCommonProps}
                         />
                     </Stack>
