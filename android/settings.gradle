@@ -1,0 +1,12 @@
+rootProject.name = 'fiora'
+
+apply from: '../node_modules/react-native-unimodules/gradle.groovy'
+includeUnimodulesProjects()
+
+apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle");
+applyNativeModulesSettingsGradle(settings)
+
+include ':app'
+// 添加本地 Android-Image-Cropper 模块
+include ':Android-Image-Cropper:cropper'
+project(':Android-Image-Cropper:cropper').projectDir = new File(rootProject.projectDir, 'Android-Image-Cropper/cropper')

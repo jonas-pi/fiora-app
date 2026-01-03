@@ -3,15 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "license": "MIT",
-  "main": "./node_modules/expo/AppEntry.js",
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --dev-client",
     "eject": "expo eject",
     "build:android": "expo build:android -t apk",
-    "ios": "expo build:ios -t archive",
+    "ios": "expo run:ios",
     "test": "jest",
     "ts-check": "tsc --noEmit",
-    "lint": "eslint ./ --ext js,jsx,ts,tsx --ignore-pattern .eslintignore --cache --fix"
+    "lint": "eslint ./ --ext js,jsx,ts,tsx --ignore-pattern .eslintignore --cache --fix",
+    "android": "expo run:android"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "~1.15.0",
@@ -29,7 +29,7 @@
     "prop-types": "^15.6.1",
     "randomcolor": "^0.6.2",
     "react": "16.13.1",
-    "react-native": "https://github.com/expo/react-native/archive/sdk-42.0.0.tar.gz",
+    "react-native": "~0.63.4",
     "react-native-dialog": "^6.2.0",
     "react-native-gesture-handler": "~1.10.2",
     "react-native-image-zoom-viewer": "^3.0.1",
@@ -40,7 +40,13 @@
     "react-redux": "^7.2.2",
     "redux": "^4.0.0",
     "socket.io-client": "^4.1.3",
-    "typescript": "~4.0.0"
+    "typescript": "~4.0.0",
+    "expo-splash-screen": "~0.11.2",
+    "expo-status-bar": "~1.0.4",
+    "expo-updates": "~0.8.1",
+    "react-dom": "16.13.1",
+    "react-native-unimodules": "0.14.10",
+    "react-native-web": "~0.13.12"
   },
   "overrides": {
     "react-navigation-drawer": {
@@ -73,6 +79,7 @@
     "expo-cli": "^4.7.3",
     "jest-expo": "^42.0.0",
     "react-test-renderer": "16.3.1",
-    "ts-jest": "^26.5.2"
+    "ts-jest": "^26.5.2",
+    "@babel/core": "^7.9.0"
   }
 }
