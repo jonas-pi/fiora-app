@@ -76,3 +76,4 @@ buck-out/
 web-build/
 
 # @end expo-cli
+android/Android-Image-Cropper
