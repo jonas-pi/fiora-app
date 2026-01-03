@@ -6,13 +6,13 @@
 // 圆角半径常量
 export const BORDER_RADIUS = {
     // 按钮圆角
-    button: 12,
+    button: 16, // 从 12 增加到 16
     // 输入框圆角
-    input: 12,
+    input: 16, // 从 12 增加到 16
     // 小按钮圆角
-    smallButton: 8,
+    smallButton: 10, // 从 8 增加到 10
     // 卡片圆角
-    card: 16,
+    card: 20, // 从 16 增加到 20
     // 头像圆角（圆形）
     avatar: 999,
 };

@@ -9,9 +9,11 @@ import { Linkman as LinkmanType } from '../../types/redux';
 import PageContainer from '../../components/PageContainer';
 import { search } from '../../service';
 import { isiOS } from '../../utils/platform';
+import { BORDER_RADIUS } from '../../utils/styles';
 
 export default function ChatList() {
     const [searchKeywords, updateSearchKeywords] = useState('');
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
     const linkmans = useLinkmans();
 
     async function handleSearch() {
@@ -56,13 +58,16 @@ export default function ChatList() {
                     <Icon name="ios-search" style={styles.searchIcon} />
                     <Input
                         style={styles.searchText}
-                        placeholder="搜索群组/用户"
+                        placeholder={isSearchFocused ? '' : '搜索群组/用户'}
                         autoCapitalize="none"
                         autoCorrect={false}
                         returnKeyType="search"
                         value={searchKeywords}
                         onChangeText={updateSearchKeywords}
                         onSubmitEditing={handleSearch}
+                        placeholderTextColor="rgba(0, 0, 0, 0.4)"
+                        onFocus={() => setIsSearchFocused(true)}
+                        onBlur={() => setIsSearchFocused(false)}
                     />
                 </Item>
             </Header>
@@ -80,14 +85,30 @@ const styles = StyleSheet.create({
         backgroundColor: 'transparent',
         height: 42,
         borderBottomWidth: 0,
+        paddingLeft: 12, // 左右对称的内边距
+        paddingRight: 12, // 左右对称的内边距
     },
     searchItem: {
         backgroundColor: 'rgba(255,255,255,0.5)',
+        borderRadius: BORDER_RADIUS.input, // 添加圆角（16px）
+        overflow: 'hidden', // 确保圆角生效
+        paddingLeft: 12, // 左边内边距（为图标留空间）
+        paddingRight: 12, // 右边内边距
+        flex: 1, // 占据可用空间，自动居中
+        justifyContent: 'center', // 垂直居中
+        alignItems: 'center', // 水平居中
+        flexDirection: 'row', // 横向排列图标和输入框
     },
     searchIcon: {
         color: '#555',
+        marginRight: 8, // 图标和输入框之间的间距
+        width: 20, // 固定图标宽度
     },
     searchText: {
         fontSize: 14,
+        flex: 1, // 占据剩余空间
+        textAlign: 'center', // 文字居中
+        paddingLeft: 0, // 去除左边距
+        paddingRight: 20, // 右边距补偿图标宽度，使文字视觉居中
     },
 });
