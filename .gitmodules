@@ -1,0 +1,3 @@
+[submodule "android/Android-Image-Cropper"]
+	path = android/Android-Image-Cropper
+	url = https://github.com/ArthurHub/Android-Image-Cropper.git
