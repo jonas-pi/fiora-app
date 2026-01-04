@@ -13,6 +13,15 @@ export default async function uploadFileWithProgress(
     base64Data: string,
     fileName: string,
     onProgress?: (progress: number) => void,
+    options?: {
+        /**
+         * 允许的 base64 字符串最大长度（注意：这是 base64 字符长度，不是文件字节数）
+         * - base64 会膨胀为原始字节的约 4/3
+         * - 默认保持原来的 10MB 上限，避免误上传超大文件
+         * - 对表情包（18MB/20MB）等场景可单独放宽
+         */
+        maxBase64Length?: number;
+    },
 ): Promise<string> {
     return new Promise((resolve, reject) => {
         try {
@@ -47,10 +56,11 @@ export default async function uploadFileWithProgress(
                 throw new Error('图片数据格式不正确：填充字符过多');
             }
             
-            // 检查大小（10MB 限制）
-            const maxBase64Size = 10 * 1024 * 1024;
-            if (cleanBase64.length > maxBase64Size) {
-                throw new Error('图片太大，请选择较小的图片（建议小于 7MB）');
+            // 检查大小（base64 字符串长度限制）
+            // 默认仍为 10MB（兼容原行为），表情包等可通过 options 放宽
+            const maxBase64Length = options?.maxBase64Length ?? 10 * 1024 * 1024;
+            if (cleanBase64.length > maxBase64Length) {
+                throw new Error('图片太大，请选择较小的图片');
             }
             
             // 获取服务器地址

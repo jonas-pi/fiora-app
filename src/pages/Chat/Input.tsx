@@ -14,7 +14,7 @@ import {
     Pressable,
     Image,
 } from 'react-native';
-import { Button, ActionSheet } from 'native-base';
+import { Button } from 'native-base';
 import { Actions } from 'react-native-router-flux';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -26,13 +26,14 @@ import expressions from '../../utils/expressions';
 import Toast from '../../components/Toast';
 import { referer } from '../../utils/constant';
 import { StickerItem, loadStickers, saveStickers, validateSticker } from '../../utils/stickers';
+import { getOSSFileUrl } from '../../utils/uploadFile';
 
 import Expression from '../../components/Expression';
 import { useIsLogin, useStore, useUser } from '../../hooks/useStore';
 import { Message } from '../../types/redux';
 import uploadFileWithProgress from '../../utils/uploadFileWithProgress';
 
-const { width: ScreenWidth } = Dimensions.get('window');
+const { width: ScreenWidth, height: ScreenHeight } = Dimensions.get('window');
 const ExpressionSize = (ScreenWidth - 16) / 10;
 // 表情包（Sticker）比默认小表情更大一些：更接近“微信表情包”尺寸
 const StickerSize = (ScreenWidth - 16) / 5;
@@ -69,6 +70,9 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
     const [inputHeight, setInputHeight] = useState(40); // 输入框高度，默认40（一行）
     const [contentHeight, setContentHeight] = useState(0); // 内容实际高度，用于判断是否需要滚动
     const [stickers, setStickers] = useState<StickerItem[]>([]); // 我的表情包列表（本地持久化）
+    const [showStickerContextMenu, setShowStickerContextMenu] = useState(false); // 长按表情包菜单（就地弹出）
+    const [stickerContextMenuPos, setStickerContextMenuPos] = useState({ x: 0, y: 0 }); // 弹出位置（屏幕坐标）
+    const [stickerContextMenuTarget, setStickerContextMenuTarget] = useState<StickerItem | null>(null); // 当前操作的表情包
 
     const $input = useRef<TextInput>();
     // 保存最新 message，供 draftApiRef.getText 读取
@@ -481,7 +485,11 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
         try {
             Toast.show('正在上传表情包…', 'warning');
             const key = `Sticker/${user._id}_${Date.now()}`;
-            const url = await uploadFileWithProgress(result.base64 as string, key);
+            // 表情包允许更大：图片 18MB、GIF 20MB
+            // 注意 uploadFileWithProgress 内部是按 base64 字符长度做限制，因此这里按 20MB * 4/3 预留一点空间
+            const url = await uploadFileWithProgress(result.base64 as string, key, undefined, {
+                maxBase64Length: 30 * 1024 * 1024,
+            });
 
             const newSticker: StickerItem = {
                 id: `${user._id}_${Date.now()}`,
@@ -509,11 +517,42 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
      * 点击表情包直接发送（与微信体验类似：点一下就发出去）
      * 为了兼容现有服务端/消息渲染，这里复用 image 消息类型。
      */
+    async function resolveStickerSize(sticker: StickerItem): Promise<{ w: number; h: number }> {
+        // 优先使用上传时记录的原始宽高（最准确）
+        if (sticker.width && sticker.height) {
+            return { w: sticker.width, h: sticker.height };
+        }
+
+        // 兜底：用远端图片实际尺寸（异步）
+        // 注意：url 可能是相对路径，需先转完整 URL
+        const uri = String(getOSSFileUrl(sticker.url, ''));
+        return new Promise((resolve) => {
+            try {
+                Image.getSize(
+                    uri,
+                    (w, h) => resolve({ w, h }),
+                    () => resolve({ w: 200, h: 200 }),
+                );
+            } catch {
+                resolve({ w: 200, h: 200 });
+            }
+        });
+    }
+
     async function handleSendSticker(sticker: StickerItem) {
         try {
-            const w = sticker.width || 200;
-            const h = sticker.height || 200;
-            const content = `${sticker.url}?width=${w}&height=${h}`;
+            // 按表情包真实宽高发送（会话泡会按 width/height 展示）
+            const { w, h } = await resolveStickerSize(sticker);
+
+            /**
+             * 按你的需求：将表情包发送出去的“会话泡尺寸”限制在正常的四分之一
+             * - 即把原始宽高缩放为 1/4 写入 width/height 参数
+             * - 同时做一个最小值兜底，避免极小表情包缩小后看不清
+             */
+            const scaledW = Math.max(48, Math.round(w / 4));
+            const scaledH = Math.max(48, Math.round(h / 4));
+
+            const content = `${sticker.url}?width=${scaledW}&height=${scaledH}`;
             const id = addSelfMessage('image', content);
             await sendMessage(id, 'image', content);
         } catch (e: any) {
@@ -525,28 +564,33 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
      * 长按删除表情包（本地删除 + 持久化）
      * 说明：目前“表情包列表”是本机 AsyncStorage；后续接入服务端接口时，这里可同时调用 deleteUserSticker。
      */
-    function handleDeleteSticker(sticker: StickerItem) {
-        ActionSheet.show(
-            {
-                options: ['删除表情包', '取消'],
-                cancelButtonIndex: 1,
-                destructiveButtonIndex: 0,
-                title: '表情包操作',
-            },
-            async (buttonIndex: number) => {
-                if (buttonIndex !== 0) {
-                    return;
-                }
-                try {
-                    const next = stickers.filter((s) => s.id !== sticker.id);
-                    setStickers(next);
-                    await saveStickers(user._id, next);
-                    Toast.success('已删除');
-                } catch (e: any) {
-                    Toast.danger(`删除失败: ${e?.message || e}`);
-                }
-            },
-        );
+    function openStickerContextMenu(sticker: StickerItem, pos: { x: number; y: number }) {
+        // 记录目标与点击坐标，用于“就地弹出”
+        setStickerContextMenuTarget(sticker);
+        setStickerContextMenuPos(pos);
+        setShowStickerContextMenu(true);
+    }
+
+    function closeStickerContextMenu() {
+        setShowStickerContextMenu(false);
+        setStickerContextMenuTarget(null);
+    }
+
+    async function confirmDeleteSticker() {
+        if (!stickerContextMenuTarget) {
+            closeStickerContextMenu();
+            return;
+        }
+        try {
+            const next = stickers.filter((s) => s.id !== stickerContextMenuTarget.id);
+            setStickers(next);
+            await saveStickers(user._id, next);
+            Toast.success('已删除');
+        } catch (e: any) {
+            Toast.danger(`删除失败: ${e?.message || e}`);
+        } finally {
+            closeStickerContextMenu();
+        }
     }
 
     // 处理输入框内容大小变化，动态调整高度
@@ -921,59 +965,124 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
                                 </ScrollView>
                             ) : expressionType === 'sticker' ? (
                                 // 表情包：我的表情包（第一个为“添加”按钮）
-                                <ScrollView
-                                    style={styles.expressionScrollView}
-                                    // 与默认表情保持一致：使用 ScrollView + flexWrap 网格，超出固定高度则竖向滚动
-                                    contentContainerStyle={[styles.expressionPreviewContainer, styles.stickerContainer]}
-                                    showsVerticalScrollIndicator={true}
-                                >
-                                    {/* 第一个格子：添加表情包 */}
-                                    <TouchableOpacity
-                                        style={styles.stickerAddItem}
-                                        activeOpacity={0.8}
-                                        onPress={(e) => {
-                                            e.stopPropagation();
-                                            handleAddSticker();
-                                        }}
+                                <>
+                                    <ScrollView
+                                        style={styles.expressionScrollView}
+                                        // 与默认表情保持一致：使用 ScrollView + flexWrap 网格，超出固定高度则竖向滚动
+                                        contentContainerStyle={[styles.expressionPreviewContainer, styles.stickerContainer]}
+                                        showsVerticalScrollIndicator={true}
                                     >
-                                        <Ionicons name="ios-add" size={28} color="#2a7bf6" />
-                                        <Text style={styles.stickerAddText}>添加</Text>
-                                    </TouchableOpacity>
-
-                                    {/* 已添加的表情包列表 */}
-                                    {stickers.map((s) => (
+                                        {/* 第一个格子：添加表情包 */}
                                         <TouchableOpacity
-                                            key={s.id}
-                                            style={styles.stickerItem}
-                                            activeOpacity={0.85}
+                                            style={styles.stickerAddItem}
+                                            activeOpacity={0.8}
                                             onPress={(e) => {
                                                 e.stopPropagation();
-                                                handleSendSticker(s);
-                                                // 选择表情包后不自动收起菜单，方便连续发送
+                                                handleAddSticker();
                                             }}
-                                            onLongPress={(e) => {
-                                                e.stopPropagation();
-                                                handleDeleteSticker(s);
-                                            }}
-                                            delayLongPress={350}
                                         >
-                                            <Image
-                                                // RN Image：直接显示远端图片/gif，不走 OSS 处理参数，避免 gif 动画丢失
-                                                source={{
-                                                    uri: s.url,
-                                                    cache: 'force-cache',
-                                                    headers: {
-                                                        Referer: referer,
-                                                    },
-                                                }}
-                                                // TS 这里会把 StyleSheet 的 style 推断成 ViewStyle|TextStyle|ImageStyle 的联合类型
-                                                // Image 组件需要 ImageStyle，因此做一次类型断言（不影响运行时）
-                                                style={styles.stickerImage as any}
-                                                resizeMode="contain"
-                                            />
+                                            <Ionicons name="ios-add" size={28} color="#2a7bf6" />
+                                            <Text style={styles.stickerAddText}>添加</Text>
                                         </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
+
+                                        {/* 已添加的表情包列表 */}
+                                        {stickers.map((s) => (
+                                            <TouchableOpacity
+                                                key={s.id}
+                                                style={styles.stickerItem}
+                                                activeOpacity={0.85}
+                                                onPress={(e) => {
+                                                    e.stopPropagation();
+                                                    handleSendSticker(s);
+                                                    // 选择表情包后不自动收起菜单，方便连续发送
+                                                }}
+                                                onLongPress={(e: any) => {
+                                                    // 就地弹出菜单：记录按下位置
+                                                    e.stopPropagation();
+                                                    const x = e?.nativeEvent?.pageX ?? 0;
+                                                    const y = e?.nativeEvent?.pageY ?? 0;
+                                                    openStickerContextMenu(s, { x, y });
+                                                }}
+                                                delayLongPress={350}
+                                            >
+                                                <Image
+                                                    // RN Image：直接显示远端图片/gif，不走 OSS 处理参数，避免 gif 动画丢失
+                                                    source={{
+                                                        // 上传接口可能返回相对路径（例如 /Sticker/xxx），这里统一转成可访问的完整 URL
+                                                        uri: String(getOSSFileUrl(s.url, '')),
+                                                        cache: 'force-cache',
+                                                        headers: {
+                                                            Referer: referer,
+                                                        },
+                                                    }}
+                                                    // TS 这里会把 StyleSheet 的 style 推断成 ViewStyle|TextStyle|ImageStyle 的联合类型
+                                                    // Image 组件需要 ImageStyle，因此做一次类型断言（不影响运行时）
+                                                    style={styles.stickerImage as any}
+                                                    resizeMode="contain"
+                                                />
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+
+                                    {/* 长按表情包：就地弹出菜单（删除/取消） */}
+                                    <Modal
+                                        visible={showStickerContextMenu}
+                                        transparent
+                                        animationType="fade"
+                                        onRequestClose={closeStickerContextMenu}
+                                    >
+                                        <Pressable
+                                            style={styles.stickerMenuOverlay}
+                                            onPress={() => {
+                                                closeStickerContextMenu();
+                                            }}
+                                        >
+                                            <Pressable
+                                                style={[
+                                                    styles.stickerMenuPanel,
+                                                    (() => {
+                                                        const panelW = 160;
+                                                        const panelH = 92;
+                                                        // 尽量让面板出现在按下位置附近，但要保证不出屏幕
+                                                        const left = Math.max(
+                                                            12,
+                                                            Math.min(ScreenWidth - panelW - 12, stickerContextMenuPos.x - panelW / 2),
+                                                        );
+                                                        const top = Math.max(
+                                                            12,
+                                                            Math.min(ScreenHeight - panelH - 12, stickerContextMenuPos.y - panelH - 10),
+                                                        );
+                                                        return { left, top, width: panelW };
+                                                    })(),
+                                                ]}
+                                                onPress={(e) => {
+                                                    // 阻止点面板内部关闭
+                                                    e.stopPropagation();
+                                                }}
+                                            >
+                                                <Pressable
+                                                    style={styles.stickerMenuItem}
+                                                    onPress={(e) => {
+                                                        e.stopPropagation();
+                                                        confirmDeleteSticker();
+                                                    }}
+                                                >
+                                                    <Text style={styles.stickerMenuDangerText}>删除此表情</Text>
+                                                </Pressable>
+                                                <View style={styles.stickerMenuDivider} />
+                                                <Pressable
+                                                    style={styles.stickerMenuItem}
+                                                    onPress={(e) => {
+                                                        e.stopPropagation();
+                                                        closeStickerContextMenu();
+                                                    }}
+                                                >
+                                                    <Text style={styles.stickerMenuText}>取消</Text>
+                                                </Pressable>
+                                            </Pressable>
+                                        </Pressable>
+                                    </Modal>
+                                </>
                             ) : (
                                 // 搜表情（待实现）
                                 <View style={styles.placeholderContainer}>
@@ -1240,9 +1349,14 @@ const styles = StyleSheet.create({
     stickerItem: {
         width: StickerSize,
         height: StickerSize,
+        margin: 6,
         padding: 6,
+        // 缩略图在格子内水平/垂直居中
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     stickerImage: {
+        // 最大不超过“添加按钮”格子的大小（本身就在 stickerItem 内）
         width: '100%',
         height: '100%',
         borderRadius: 10,
@@ -1266,6 +1380,51 @@ const styles = StyleSheet.create({
         marginTop: 6,
         fontSize: 12,
         color: '#2a7bf6',
+        fontWeight: '600',
+    },
+    // 长按表情包菜单
+    stickerMenuOverlay: {
+        flex: 1,
+        backgroundColor: 'transparent',
+    },
+    stickerMenuPanel: {
+        position: 'absolute',
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        overflow: 'hidden',
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: 'rgba(0,0,0,0.08)',
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 10 },
+                shadowOpacity: 0.12,
+                shadowRadius: 16,
+            },
+            android: {
+                elevation: 10,
+            },
+        }),
+    },
+    stickerMenuItem: {
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#fff',
+    },
+    stickerMenuDivider: {
+        height: StyleSheet.hairlineWidth,
+        backgroundColor: 'rgba(0,0,0,0.06)',
+    },
+    stickerMenuText: {
+        color: '#222',
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    stickerMenuDangerText: {
+        color: '#d9534f',
+        fontSize: 14,
         fontWeight: '600',
     },
     expressionPreviewMore: {
