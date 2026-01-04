@@ -32,6 +32,8 @@ import {
     UpdateGroupPropertyAction,
     UpdateFriendPropertyActionType,
     UpdateFriendPropertyAction,
+    UpdateLinkmanPropertyActionType,
+    UpdateLinkmanPropertyAction,
     DeleteLinkmanMessageAction,
     DeleteLinkmanMessageActionType,
 } from '../types/redux';
@@ -51,7 +53,7 @@ function disconnect() {
     } as ConnectAction);
 }
 
-function setUser(user: any) {
+async function setUser(user: any) {
     user.groups.forEach((group: Group) => {
         Object.assign(group, {
             type: 'group',
@@ -73,6 +75,8 @@ function setUser(user: any) {
     });
 
     const linkmans = [...user.groups, ...user.friends];
+    
+    // 先 dispatch 设置用户和联系人
     dispatch({
         type: SetUserActionType,
         user: {
@@ -82,6 +86,28 @@ function setUser(user: any) {
         },
         linkmans,
     } as SetUserAction);
+    
+    // 然后异步加载持久化设置并应用
+    try {
+        const { loadAllLinkmanSettings } = await import('../utils/linkmanSettings');
+        const settings = await loadAllLinkmanSettings();
+        
+        // 应用设置到每个联系人
+        Object.keys(settings).forEach((linkmanId) => {
+            const setting = settings[linkmanId];
+            if (setting.isFavorite !== undefined) {
+                updateFriendProperty(linkmanId, 'isFavorite', setting.isFavorite);
+            }
+            if (setting.remark !== undefined) {
+                updateFriendProperty(linkmanId, 'remark', setting.remark);
+            }
+            if (setting.isTop !== undefined) {
+                updateLinkmanProperty(linkmanId, 'isTop', setting.isTop);
+            }
+        });
+    } catch (error) {
+        console.error('加载持久化设置失败:', error);
+    }
 }
 function setLinkmansLastMessages(linkmans: SetLinkmanMessagesAction['linkmans']) {
     dispatch({
@@ -190,6 +216,36 @@ function updateFriendProperty(userId: string, key: string, value: any) {
         key,
         value,
     } as UpdateFriendPropertyAction);
+    
+    // 持久化保存设置（特别关心、备注）
+    if (key === 'isFavorite' || key === 'remark') {
+        import('../utils/linkmanSettings').then(({ saveLinkmanSettingsWithIndex }) => {
+            saveLinkmanSettingsWithIndex(userId, {
+                [key]: value,
+            });
+        }).catch((error) => {
+            console.error('保存联系人设置失败:', error);
+        });
+    }
+}
+function updateLinkmanProperty(linkmanId: string, key: string, value: any) {
+    dispatch({
+        type: 'UpdateLinkmanProperty',
+        linkmanId,
+        key,
+        value,
+    } as UpdateLinkmanPropertyAction);
+    
+    // 持久化保存设置（置顶）
+    if (key === 'isTop') {
+        import('../utils/linkmanSettings').then(({ saveLinkmanSettingsWithIndex }) => {
+            saveLinkmanSettingsWithIndex(linkmanId, {
+                isTop: value,
+            });
+        }).catch((error) => {
+            console.error('保存联系人设置失败:', error);
+        });
+    }
 }
 function addLinkman(linkman: Linkman, focus = false) {
     if (linkman.type === 'group') {
@@ -208,6 +264,13 @@ function removeLinkman(linkmanId: string) {
         type: RemoveLinkmanActionType,
         linkmanId,
     } as RemoveLinkmanAction);
+    
+    // 删除持久化设置
+    import('../utils/linkmanSettings').then(({ removeLinkmanSettingsWithIndex }) => {
+        removeLinkmanSettingsWithIndex(linkmanId);
+    }).catch((error) => {
+        console.error('删除联系人设置失败:', error);
+    });
 }
 function setFriend(linkmanId: string, from: Friend['from'], to: Friend['to']) {
     dispatch({
@@ -244,6 +307,7 @@ export default {
     setFriend,
     updateGroupProperty,
     updateFriendProperty,
+    updateLinkmanProperty,
 
     addLinkmanMessage,
     addLinkmanHistoryMessages,

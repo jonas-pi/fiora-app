@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { ScrollView, StyleSheet, RefreshControl, Pressable, View, TouchableOpacity } from 'react-native';
 
 import { Header, Item, Icon, Input } from 'native-base';
 import { Actions } from 'react-native-router-flux';
@@ -10,10 +10,16 @@ import PageContainer from '../../components/PageContainer';
 import { search } from '../../service';
 import { isiOS } from '../../utils/platform';
 import { BORDER_RADIUS } from '../../utils/styles';
+import fetch from '../../utils/fetch';
+import action from '../../state/action';
 
 export default function ChatList() {
     const [searchKeywords, updateSearchKeywords] = useState('');
     const [isSearchFocused, setIsSearchFocused] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [openSwipeId, setOpenSwipeId] = useState<string | null>(null); // 当前打开的滑动项ID
+    const closeSwipeRefs = useRef<{ [key: string]: () => void }>({}); // 存储每个项的关闭函数
+    const isMountedRef = useRef(true); // 组件挂载状态
     const linkmans = useLinkmans();
 
     async function handleSearch() {
@@ -21,6 +27,96 @@ export default function ChatList() {
         updateSearchKeywords('');
         Actions.push('searchResult', result);
     }
+
+    /**
+     * 关闭所有打开的滑动菜单
+     */
+    function closeAllSwipes() {
+        if (!openSwipeId) {
+            return;
+        }
+        const currentOpenId = openSwipeId;
+        setOpenSwipeId(null);
+        const closeFn = closeSwipeRefs.current[currentOpenId];
+        if (closeFn) {
+            try {
+                closeFn();
+            } catch (error) {
+                console.error('关闭滑动菜单失败:', error);
+            }
+        }
+        setTimeout(() => {
+            if (closeSwipeRefs.current[currentOpenId]) {
+                delete closeSwipeRefs.current[currentOpenId];
+            }
+        }, 300);
+    }
+
+    /**
+     * 下拉刷新处理函数
+     * 刷新聊天列表的最新消息
+     */
+    async function handleRefresh() {
+        closeAllSwipes(); // 刷新时先关闭所有打开的菜单
+        setRefreshing(true);
+        try {
+            // 从当前的 linkmans 中获取所有联系人的 ID
+            // 这样可以同时支持登录和游客模式
+            const linkmanIds = linkmans.map((linkman) => linkman._id);
+            
+            if (linkmanIds.length > 0) {
+                const [err, linkmansData] = await fetch('getLinkmansLastMessagesV2', {
+                    linkmans: linkmanIds,
+                });
+                if (!err && linkmansData) {
+                    action.setLinkmansLastMessages(linkmansData);
+                }
+            }
+        } catch (error) {
+            console.error('刷新聊天列表失败:', error);
+        } finally {
+            // 延迟一下再结束刷新，让用户看到刷新动画
+            setTimeout(() => {
+                if (isMountedRef.current) {
+                    setRefreshing(false);
+                }
+            }, 500);
+        }
+    }
+
+    /**
+     * 处理滑动项打开
+     */
+    function handleSwipeOpen(linkmanId: string) {
+        if (openSwipeId && openSwipeId !== linkmanId && closeSwipeRefs.current[openSwipeId]) {
+            closeSwipeRefs.current[openSwipeId]();
+        }
+        setOpenSwipeId(linkmanId);
+    }
+
+    /**
+     * 处理滑动项关闭
+     */
+    function handleSwipeClose(linkmanId: string) {
+        if (openSwipeId === linkmanId) {
+            setOpenSwipeId(null);
+        }
+    }
+
+    /**
+     * 注册关闭函数
+     */
+    function registerCloseFunction(linkmanId: string, closeFn: () => void) {
+        closeSwipeRefs.current[linkmanId] = closeFn;
+    }
+
+    // 组件挂载/卸载管理
+    useEffect(() => {
+        isMountedRef.current = true;
+        return () => {
+            isMountedRef.current = false;
+        };
+    }, []);
 
     function renderLinkman(linkman: LinkmanType) {
         const { _id: linkmanId, unread, messages, createTime } = linkman;
@@ -47,39 +143,95 @@ export default function ChatList() {
                 unread={unread}
                 linkman={linkman}
                 lastMessageId={lastMessage ? lastMessage._id : ''}
+                isOpen={openSwipeId === linkmanId}
+                onSwipeOpen={() => handleSwipeOpen(linkmanId)}
+                onSwipeClose={() => handleSwipeClose(linkmanId)}
+                registerCloseFunction={(closeFn) => registerCloseFunction(linkmanId, closeFn)}
+                onAnyLinkmanPress={closeAllSwipes}
+                hasAnyMenuOpen={!!openSwipeId}
+                openSwipeId={openSwipeId}
+                closeSwipeRefs={closeSwipeRefs}
             />
         );
     }
 
     return (
         <PageContainer>
-            <Header searchBar rounded noShadow style={styles.searchContainer}>
-                <Item style={styles.searchItem}>
-                    <Icon name="ios-search" style={styles.searchIcon} />
-                    <Input
-                        style={styles.searchText}
-                        placeholder={isSearchFocused ? '' : '搜索群组/用户'}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        returnKeyType="search"
-                        value={searchKeywords}
-                        onChangeText={updateSearchKeywords}
-                        onSubmitEditing={handleSearch}
-                        placeholderTextColor="rgba(0, 0, 0, 0.4)"
-                        onFocus={() => setIsSearchFocused(true)}
-                        onBlur={() => setIsSearchFocused(false)}
+            {/* 搜索栏 - 点击时关闭菜单 */}
+            <TouchableOpacity
+                activeOpacity={1}
+                onPress={closeAllSwipes}
+                style={styles.searchWrapper}
+            >
+                <Header searchBar rounded noShadow style={styles.searchContainer}>
+                    <Item style={styles.searchItem}>
+                        <Icon name="ios-search" style={styles.searchIcon} />
+                        <Input
+                            style={styles.searchText}
+                            placeholder={isSearchFocused ? '' : '搜索群组/用户'}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            returnKeyType="search"
+                            value={searchKeywords}
+                            onChangeText={updateSearchKeywords}
+                            onSubmitEditing={handleSearch}
+                            placeholderTextColor="rgba(0, 0, 0, 0.4)"
+                            onFocus={() => {
+                                setIsSearchFocused(true);
+                                closeAllSwipes(); // 聚焦时也关闭菜单
+                            }}
+                            onBlur={() => setIsSearchFocused(false)}
+                        />
+                    </Item>
+                </Header>
+            </TouchableOpacity>
+            <ScrollView
+                style={styles.messageList}
+                onScrollBeginDrag={closeAllSwipes}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={handleRefresh}
+                        // iOS 和 Android 的刷新颜色配置
+                        tintColor="#2a7bf6"
+                        colors={['#2a7bf6']}
+                        // 刷新提示文字（Android）
+                        title="下拉刷新"
+                        titleColor="#2a7bf6"
                     />
-                </Item>
-            </Header>
-            <ScrollView style={styles.messageList}>
+                }
+            >
                 {linkmans && linkmans.map((linkman) => renderLinkman(linkman))}
             </ScrollView>
+            {/* 当有菜单打开时，添加一个覆盖层来处理点击空白区域 */}
+            {openSwipeId && (
+                <Pressable
+                    onPress={closeAllSwipes}
+                    style={styles.overlay}
+                    pointerEvents="box-none"
+                >
+                    <View style={StyleSheet.absoluteFill} pointerEvents="auto" />
+                </Pressable>
+            )}
         </PageContainer>
     );
 }
 
 const styles = StyleSheet.create({
+    searchWrapper: {
+        // 搜索栏包装器，用于点击关闭菜单
+    },
     messageList: {},
+    overlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'transparent',
+        zIndex: 999,
+        elevation: 999,
+    },
     searchContainer: {
         marginTop: isiOS ? 0 : 5,
         backgroundColor: 'transparent',

@@ -137,6 +137,7 @@ export type ActionTypes =
     | UpdateUserPropertyAction
     | UpdateUIPropertyAction
     | UpdateFriendPropertyAction
+    | UpdateLinkmanPropertyAction
     | LogoutAction;
 
 export type Message = {

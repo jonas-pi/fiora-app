@@ -152,6 +152,36 @@ const reducer = produce((state: State = initialState, action: ActionTypes) => {
             }
             return state;
         }
+        case 'UpdateLinkmanProperty': {
+            const linkman = state.linkmans.find(
+                (linkman) => linkman._id === action.linkmanId,
+            );
+            if (linkman) {
+                // @ts-ignore
+                linkman[action.key] = action.value;
+                // 如果是置顶操作，需要重新排序
+                if (action.key === 'isTop') {
+                    state.linkmans.sort((linkman1, linkman2) => {
+                        const isTop1 = (linkman1 as any).isTop || false;
+                        const isTop2 = (linkman2 as any).isTop || false;
+                        // 置顶的排在前面
+                        if (isTop1 && !isTop2) return -1;
+                        if (!isTop1 && isTop2) return 1;
+                        // 如果都是置顶或都不是置顶，按时间排序
+                        const lastMessageTime1 =
+                            linkman1.messages.length > 0
+                                ? linkman1.messages[linkman1.messages.length - 1].createTime
+                                : linkman1.createTime;
+                        const lastMessageTime2 =
+                            linkman2.messages.length > 0
+                                ? linkman2.messages[linkman2.messages.length - 1].createTime
+                                : linkman2.createTime;
+                        return new Date(lastMessageTime1) < new Date(lastMessageTime2) ? 1 : -1;
+                    });
+                }
+            }
+            return state;
+        }
         case SetFocusActionType: {
             const targetLinkman = state.linkmans.find(
                 (linkman) => linkman._id === action.linkmanId,

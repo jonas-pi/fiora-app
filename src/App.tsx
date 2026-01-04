@@ -11,6 +11,7 @@ import Signup from './pages/LoginSignup/Signup';
 
 import Loading from './components/Loading';
 import Other from './pages/Other/Other';
+import Contacts from './pages/Contacts/Contacts';
 import Notification from './components/Nofitication';
 import { State, User } from './types/redux';
 import SelfInfo from './pages/ChatList/SelfInfo';
@@ -77,6 +78,21 @@ function App({ title, primaryColor, isLogin }: Props) {
                                         backgroundColor: primaryColor10,
                                         borderBottomWidth: 0,
                                     }}
+                                />
+                                <Scene
+                                    key="contacts"
+                                    component={Contacts}
+                                    hideNavBar
+                                    title="联系人"
+                                    icon={({ focused }) => (
+                                        <Icon
+                                            name="people-outline"
+                                            style={{
+                                                fontSize: 24,
+                                                color: focused ? 'white' : '#bbb',
+                                            }}
+                                        />
+                                    )}
                                 />
                                 <Scene
                                     key="other"

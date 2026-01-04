@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { StyleSheet, KeyboardAvoidingView, ScrollView, Dimensions } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { StyleSheet, KeyboardAvoidingView, ScrollView, Dimensions, Pressable, View } from 'react-native';
 import Constants from 'expo-constants';
 import { Actions } from 'react-native-router-flux';
 
@@ -57,6 +57,8 @@ export default function Chat() {
     const { focus } = useStore();
     const linkman = useFocusLinkman();
     const $messageList = useRef<ScrollView>();
+    const [hasMenuOpen, setHasMenuOpen] = useState(false); // 菜单是否打开
+    const closeAllMenusRef = useRef<(() => void) | undefined>(); // 关闭菜单的函数引用
 
     async function fetchGroupOnlineMembers() {
         let onlineMembers: Group['members'] = [];
@@ -127,6 +129,18 @@ export default function Chat() {
         }
     }
 
+    // 处理菜单状态变化
+    function handleMenuStateChange(hasMenuOpen: boolean) {
+        setHasMenuOpen(hasMenuOpen);
+    }
+
+    // 关闭所有菜单
+    function handleCloseAllMenus() {
+        if (closeAllMenusRef.current) {
+            closeAllMenusRef.current();
+        }
+    }
+
     return (
         <PageContainer disableSafeAreaView>
             <KeyboardAvoidingView
@@ -137,7 +151,22 @@ export default function Chat() {
                 {/* 
                 // @ts-ignore */}
                 <MessageList $scrollView={$messageList} />
-                <Input onHeightChange={handleInputHeightChange} />
+                {/* 当有菜单打开时，添加覆盖层来处理点击聊天记录区域关闭菜单 */}
+                {/* 覆盖层使用 pointerEvents="box-none"，让子元素（Input 和菜单）可以接收触摸事件 */}
+                {hasMenuOpen && (
+                    <Pressable
+                        onPress={handleCloseAllMenus}
+                        style={styles.menuOverlay}
+                        pointerEvents="box-none"
+                    >
+                        <View style={StyleSheet.absoluteFill} pointerEvents="auto" />
+                    </Pressable>
+                )}
+                <Input 
+                    onHeightChange={handleInputHeightChange}
+                    onMenuStateChange={handleMenuStateChange}
+                    closeAllMenusRef={closeAllMenusRef}
+                />
             </KeyboardAvoidingView>
         </PageContainer>
     );
@@ -146,5 +175,18 @@ export default function Chat() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        position: 'relative', // 为绝对定位的覆盖层提供定位上下文
+    },
+    // 菜单覆盖层，用于处理点击聊天记录区域关闭菜单
+    // 只覆盖 MessageList 区域，不覆盖 Input 区域（Input 在覆盖层之后渲染，zIndex 更高）
+    menuOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'transparent',
+        zIndex: 998, // 在消息列表上方，但低于菜单和输入框
+        elevation: 998, // Android 阴影层级
     },
 });
