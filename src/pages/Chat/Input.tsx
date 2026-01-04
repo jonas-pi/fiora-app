@@ -50,8 +50,15 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
     const [cursorPosition, setCursorPosition] = useState({ start: 0, end: 0 });
     const [isUploading, setIsUploading] = useState(false); // 添加上传状态锁
     const [isVoiceMode, setIsVoiceMode] = useState(false); // 语音模式（待实现）
+    const [inputHeight, setInputHeight] = useState(40); // 输入框高度，默认40（一行）
+    const [contentHeight, setContentHeight] = useState(0); // 内容实际高度，用于判断是否需要滚动
 
     const $input = useRef<TextInput>();
+    // 记录“单行时 contentSize.height 的基准值”，用于兼容不同平台对 contentSize 是否包含 padding 的差异
+    const $singleLineContentHeight = useRef<number | null>(null);
+    // 部分输入法在按一次“换行/回车”时会触发两次换行（产生 \n\n）
+    // 这里用 onKeyPress 做标记，在 onChangeText 中做一次性“去重”
+    const $pendingSingleEnter = useRef(false);
 
     // 监听键盘显示/隐藏事件，自动调整消息位置
     useEffect(() => {
@@ -90,13 +97,18 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
         });
     }
 
-    function addSelfMessage(type: string, content: string) {
-        const _id = focus + Date.now();
+    /**
+     * 构建一条“本地发送中”的消息对象（用于先插入列表，再走发送/上传流程）
+     * 之所以单独封装，是为了在上传进度回调里能拿到一个完整的 Message，满足 action.updateSelfMessage 的类型要求
+     */
+    function createSelfMessage(type: string, content: string): Message {
+        const createTime = Date.now();
+        const _id = focus + createTime;
         const newMessage: Message = {
             _id,
             type,
             content,
-            createTime: Date.now(),
+            createTime,
             from: {
                 _id: user._id,
                 username: user.username,
@@ -105,17 +117,16 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
             },
             to: '',
             loading: true,
+            // 图片和文件消息初始进度为 0，其它直接 100
+            percent: type === 'image' || type === 'file' ? 0 : 100,
         };
+        return newMessage;
+    }
 
-        // 图片和文件消息初始进度为 0
-        if (type === 'image' || type === 'file') {
-            newMessage.percent = 0;
-        } else {
-            newMessage.percent = 100;
-        }
+    function addSelfMessage(type: string, content: string) {
+        const newMessage = createSelfMessage(type, content);
         action.addLinkmanMessage(focus, newMessage);
-
-        return _id;
+        return newMessage._id;
     }
 
     async function sendMessage(localId: string, type: string, content: string) {
@@ -144,10 +155,7 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
 
     function handleSelectionChange(event: any) {
         const { start, end } = event.nativeEvent.selection;
-        setCursorPosition({
-            start,
-            end,
-        });
+        setCursorPosition({ start, end });
     }
 
     function handleFocus() {
@@ -221,10 +229,12 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
             }
             
             setIsUploading(true);
-            const id = addSelfMessage(
+            const localMessage = createSelfMessage(
                 'image',
                 `${result.uri}?width=${result.width}&height=${result.height}`,
             );
+            action.addLinkmanMessage(focus, localMessage);
+            const id = localMessage._id;
             const key = `ImageMessage/${user._id}_${Date.now()}`;
             try {
                 const imageUrl = await uploadFileWithProgress(
@@ -233,6 +243,7 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
                     (progress) => {
                         // 更新上传进度
                         action.updateSelfMessage(focus, id, {
+                            ...localMessage,
                             percent: progress,
                         });
                     },
@@ -285,10 +296,12 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
             }
             
             setIsUploading(true);
-            const id = addSelfMessage(
+            const localMessage = createSelfMessage(
                 'image',
                 `${result.uri}?width=${result.width}&height=${result.height}`,
             );
+            action.addLinkmanMessage(focus, localMessage);
+            const id = localMessage._id;
             const key = `ImageMessage/${user._id}_${Date.now()}`;
             try {
                 const imageUrl = await uploadFileWithProgress(
@@ -297,6 +310,7 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
                     (progress) => {
                         // 更新上传进度
                         action.updateSelfMessage(focus, id, {
+                            ...localMessage,
                             percent: progress,
                         });
                     },
@@ -322,8 +336,86 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
         }
     }
 
+    // 处理输入框内容大小变化，动态调整高度
+    // 主流做法：使用 contentSize.height 驱动高度，并做“单行基准校准”，避免不同平台出现“永远多一行”的偏差
+    function handleContentSizeChange(event: any) {
+        const { height } = event.nativeEvent.contentSize;
+        
+        // 如果没有内容，保持默认高度
+        if (!message || message.trim() === '') {
+            if (inputHeight !== 40) {
+                setInputHeight(40);
+                setContentHeight(0);
+            }
+            return;
+        }
+
+        const minHeight = 40; // 1行（与样式保持一致）
+        const maxHeight = 200; // 9行
+
+        // 记录首次“非空”时的 contentSize.height 作为单行基准
+        // - 有的系统返回 20（只算文本行高）
+        // - 有的系统返回 40（包含 padding 后的整体高度）
+        if ($singleLineContentHeight.current == null && height > 0) {
+            $singleLineContentHeight.current = height;
+        }
+
+        const singleLineContentHeight = $singleLineContentHeight.current ?? height;
+        // 计算需要补偿的高度（如果单行 contentSize 不包含 padding，则补偿 20；如果已包含，则补偿 0）
+        const paddingCompensation = Math.max(0, minHeight - singleLineContentHeight);
+
+        const desiredContentHeight = height + paddingCompensation;
+        setContentHeight(desiredContentHeight);
+
+        const nextHeight = Math.max(minHeight, Math.min(desiredContentHeight, maxHeight));
+
+        if (Math.abs(nextHeight - inputHeight) > 1) {
+            setInputHeight(nextHeight);
+            setTimeout(() => {
+                onHeightChange();
+            }, 50);
+        }
+    }
+
     function handleChangeText(value: string) {
-        setMessage(value);
+        // 修复：部分输入法按一次“换行”会插入两个换行符（\n\n）
+        // 仅在检测到本次是 Enter 触发的情况下做去重，避免影响粘贴等场景
+        if ($pendingSingleEnter.current) {
+            $pendingSingleEnter.current = false;
+
+            // 通过 diff 找到本次插入的片段
+            const prev = message;
+            const next = value;
+            let start = 0;
+            while (start < prev.length && start < next.length && prev[start] === next[start]) {
+                start++;
+            }
+            let endPrev = prev.length - 1;
+            let endNext = next.length - 1;
+            while (endPrev >= start && endNext >= start && prev[endPrev] === next[endNext]) {
+                endPrev--;
+                endNext--;
+            }
+            const inserted = next.slice(start, endNext + 1);
+            const deleted = prev.slice(start, endPrev + 1);
+
+            // 仅处理“只插入了 \n\n 且没有删除”的情况
+            if (deleted.length === 0 && inserted === '\n\n') {
+                const fixed = next.slice(0, start) + '\n' + next.slice(endNext + 1);
+                setMessage(fixed);
+            } else {
+                setMessage(value);
+            }
+        } else {
+            setMessage(value);
+        }
+        // 如果内容为空，重置高度为默认值
+        if (!value || value.trim() === '') {
+            if (inputHeight !== 40) {
+                setInputHeight(40);
+                setContentHeight(0);
+            }
+        }
     }
 
     function insertExpression(e: string) {
@@ -337,7 +429,8 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
             start: cursorPosition.start + expression.length,
             end: cursorPosition.start + expression.length,
         });
-        setInputText(newValue);
+        // 设置消息，onContentSizeChange 会自动触发高度调整
+        setMessage(newValue);
     }
 
     // 处理语音按钮点击（待实现）
@@ -433,26 +526,35 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
                         
                         {/* 中间：输入框 */}
                         <View 
-                            style={{ flex: 1 }}
-                            onStartShouldSetResponder={() => true}
-                            onResponderTerminationRequest={() => false}
+                            style={styles.inputWrapper}
                         >
                             <TextInput
                                 // @ts-ignore
                                 ref={$input}
-                                style={styles.input}
-                                placeholder="随便聊点啥吧, 不要无意义刷屏~~"
+                                style={[styles.input, { height: inputHeight, maxHeight: 200 }]} // 最大高度：200 (9行)
+                                placeholder="随便聊点啥吧"
                                 onChangeText={handleChangeText}
-                                onSubmitEditing={handleSubmit}
+                                onContentSizeChange={handleContentSizeChange}
+                                onKeyPress={(e) => {
+                                    // 标记一次 Enter（换行）键，用于 onChangeText 去重 \n\n
+                                    if (e?.nativeEvent?.key === 'Enter') {
+                                        $pendingSingleEnter.current = true;
+                                    }
+                                }}
                                 autoCapitalize="none"
                                 blurOnSubmit={false}
                                 maxLength={2048}
-                                returnKeyType="send"
+                                // 多行输入时，回车应插入换行，而不是触发发送
+                                // 发送通过右侧“发送”按钮触发
+                                returnKeyType="default"
                                 enablesReturnKeyAutomatically
                                 underlineColorAndroid="transparent"
                                 onSelectionChange={handleSelectionChange}
                                 onFocus={handleFocus}
                                 value={message}
+                                multiline={true} // 启用多行输入
+                                scrollEnabled={contentHeight > 200} // 只有当内容实际高度超过9行（200px）时才启用滚动
+                                textAlignVertical="top" // Android 上文本从顶部开始
                             />
                         </View>
                         
@@ -472,16 +574,31 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
                                     color="#999" 
                                 />
                             </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.rightButton}
-                                onPress={(e) => {
-                                    e.stopPropagation();
-                                    handleMoreMenu();
-                                }}
-                                activeOpacity={0.7}
-                            >
-                                <Ionicons name="ios-add-circle-outline" size={24} color="#999" />
-                            </TouchableOpacity>
+
+                            {/* 有内容时显示“发送”，否则显示“加号” */}
+                            {message.trim() ? (
+                                <TouchableOpacity
+                                    style={styles.sendButton}
+                                    onPress={(e) => {
+                                        e.stopPropagation();
+                                        handleSubmit();
+                                    }}
+                                    activeOpacity={0.8}
+                                >
+                                    <Text style={styles.sendButtonText}>发送</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.rightButton}
+                                    onPress={(e) => {
+                                        e.stopPropagation();
+                                        handleMoreMenu();
+                                    }}
+                                    activeOpacity={0.7}
+                                >
+                                    <Ionicons name="ios-add-circle-outline" size={24} color="#999" />
+                                </TouchableOpacity>
+                            )}
                         </View>
                     </View>
                 ) : (
@@ -665,10 +782,12 @@ const styles = StyleSheet.create({
     },
     inputContainer: {
         flexDirection: 'row',
-        alignItems: 'center',
+        // 输入框高度增加时，左右按钮应始终贴底对齐（处于最底部一行的垂直居中）
+        alignItems: 'flex-end',
         paddingLeft: 10,
         paddingRight: 10,
-        paddingVertical: 8,
+        paddingTop: 8,
+        paddingBottom: Platform.OS === 'android' ? 4 : 8, // Android 上减小底部内边距，使键盘间距更自然
         zIndex: 1001, // 确保输入框在覆盖层和菜单上方
         elevation: 1001, // Android 阴影层级
         backgroundColor: 'rgba(255, 255, 255, 0.5)', // 确保输入框背景可见
@@ -680,15 +799,31 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         marginRight: 8,
     },
-    input: {
+    inputWrapper: {
         flex: 1,
-        height: 40,
+        position: 'relative',
+    },
+    input: {
+        width: '100%', // 使用 width 而不是 flex，避免高度被限制
+        minHeight: 40, // 最小高度
+        paddingTop: 10, // 上内边距
+        paddingBottom: 10, // 下内边距
         paddingLeft: 12,
         paddingRight: 12,
         backgroundColor: 'white',
         borderWidth: 1,
         borderColor: '#e5e5e5',
-        borderRadius: 20, // 更现代的圆角，类似聊天气泡
+        borderRadius: 20,
+        fontSize: 16,
+        lineHeight: 20, // 行高
+        color: '#000',
+    },
+    cursor: {
+        width: 1,
+        height: 20,
+        backgroundColor: '#000',
+        marginLeft: 1,
+        marginRight: 1,
     },
     rightButtons: {
         flexDirection: 'row',
@@ -706,7 +841,17 @@ const styles = StyleSheet.create({
         width: 50,
         height: 36,
         marginLeft: 8,
-        paddingLeft: 10,
+        borderRadius: 18,
+        backgroundColor: '#2a7bf6',
+        alignItems: 'center',
+        justifyContent: 'center',
+        // 让按钮在底部行内垂直居中
+        marginBottom: 2,
+    },
+    sendButtonText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '600',
     },
     button: {
         height: 40,

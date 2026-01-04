@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, KeyboardAvoidingView, ScrollView, Dimensions, Pressable, View } from 'react-native';
+import { StyleSheet, KeyboardAvoidingView, ScrollView, Dimensions, Pressable, View, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { Actions } from 'react-native-router-flux';
 
@@ -48,7 +48,8 @@ const keyboardOffset = (() => {
         // iPhone 12 Pro Max
         return 64;
     }
-    return Constants.statusBarHeight + 44;
+    // Android 上减小偏移量，使键盘与输入框的间距更自然
+    return Platform.OS === 'android' ? 0 : Constants.statusBarHeight + 44;
 })();
 
 export default function Chat() {
@@ -145,8 +146,9 @@ export default function Chat() {
         <PageContainer disableSafeAreaView>
             <KeyboardAvoidingView
                 style={styles.container}
-                behavior={isiOS ? 'padding' : 'height'}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 keyboardVerticalOffset={keyboardOffset}
+                enabled={Platform.OS === 'ios'}
             >
                 {/* 
                 // @ts-ignore */}
