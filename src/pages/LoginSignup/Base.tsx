@@ -48,7 +48,8 @@ export default function Base({ buttonText, jumpText, jumpPage, onSubmit }: Props
                         onChangeText={setUsername}
                         autoCapitalize="none"
                         autoCompleteType="username"
-                        placeholder={isUsernameFocused ? '' : '请输入用户名'}
+                        // 只有当输入框没有焦点且内容为空时才显示提示文字
+                        placeholder={isUsernameFocused || username ? '' : '请输入用户名'}
                         placeholderTextColor="rgba(0, 0, 0, 0.3)"
                         onFocus={() => setIsUsernameFocused(true)}
                         onBlur={() => setIsUsernameFocused(false)}
@@ -63,7 +64,8 @@ export default function Base({ buttonText, jumpText, jumpPage, onSubmit }: Props
                         onChangeText={setPassword}
                         autoCapitalize="none"
                         autoCompleteType="password"
-                        placeholder={isPasswordFocused ? '' : '请输入密码'}
+                        // 只有当输入框没有焦点且内容为空时才显示提示文字
+                        placeholder={isPasswordFocused || password ? '' : '请输入密码'}
                         placeholderTextColor="rgba(0, 0, 0, 0.3)"
                         onFocus={() => setIsPasswordFocused(true)}
                         onBlur={() => setIsPasswordFocused(false)}

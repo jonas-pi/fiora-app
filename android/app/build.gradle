@@ -216,9 +216,11 @@ dependencies {
         exclude group:'com.facebook.flipper'
         exclude group:'com.squareup.okhttp3', module:'okhttp'
     }
-    debugImplementation("com.facebook.flipper:flipper-fresco-plugin:${FLIPPER_VERSION}") {
-        exclude group:'com.facebook.flipper'
-    }
+    // 注释掉 flipper-fresco-plugin，因为其依赖的 Fresco 2.2.0 组件不可用
+    // 这是一个可选的调试工具，不影响应用功能
+    // debugImplementation("com.facebook.flipper:flipper-fresco-plugin:${FLIPPER_VERSION}") {
+    //     exclude group:'com.facebook.flipper'
+    // }
     addUnimodulesDependencies()
     
     // 使用本地 Android-Image-Cropper 模块（因为 Maven 仓库中已移除）

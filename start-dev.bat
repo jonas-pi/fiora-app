@@ -9,7 +9,7 @@ REM 设置 Node.js 选项以增加兼容性
 set NODE_OPTIONS=--no-experimental-fetch --no-warnings
 
 REM 清理缓存并启动
-call npm start -- --clear --reset-cache
+call npm start -- --clear
 
 pause
 
