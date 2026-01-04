@@ -30,7 +30,8 @@ function GroupInfo({ group }: Props) {
         if (currentLinkman._id === group._id) {
             Actions.popTo('chat');
         } else {
-            Actions.popTo('chatlist');
+            // Tab 场景请用 jump（避免 popTo 在 Tabs 嵌套下找不到 route 导致“点击不动”）
+            Actions.chatlist();
             Actions.push('chat', { title: group.name });
         }
     }
@@ -48,7 +49,8 @@ function GroupInfo({ group }: Props) {
             action.addLinkmanHistoryMessages(_id, messages);
             action.setFocus(_id);
 
-            Actions.popTo('chatlist');
+            // Tab 场景请用 jump（避免 popTo 在 Tabs 嵌套下找不到 route 导致“点击不动”）
+            Actions.chatlist();
             Actions.push('chat', { title: newLinkman.name });
         }
     }

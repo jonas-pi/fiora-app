@@ -12,6 +12,7 @@ import {
     ScrollView,
     Keyboard,
     Pressable,
+    Image,
 } from 'react-native';
 import { Button, ActionSheet } from 'native-base';
 import { Actions } from 'react-native-router-flux';
@@ -23,6 +24,8 @@ import fetch from '../../utils/fetch';
 import { isiOS } from '../../utils/platform';
 import expressions from '../../utils/expressions';
 import Toast from '../../components/Toast';
+import { referer } from '../../utils/constant';
+import { StickerItem, loadStickers, saveStickers, validateSticker } from '../../utils/stickers';
 
 import Expression from '../../components/Expression';
 import { useIsLogin, useStore, useUser } from '../../hooks/useStore';
@@ -31,6 +34,8 @@ import uploadFileWithProgress from '../../utils/uploadFileWithProgress';
 
 const { width: ScreenWidth } = Dimensions.get('window');
 const ExpressionSize = (ScreenWidth - 16) / 10;
+// 表情包（Sticker）比默认小表情更大一些：更接近“微信表情包”尺寸
+const StickerSize = (ScreenWidth - 16) / 5;
 
 type Props = {
     onHeightChange: () => void;
@@ -59,9 +64,11 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
     const [showMoreMenu, setShowMoreMenu] = useState(false); // 显示加号二级菜单
     const [cursorPosition, setCursorPosition] = useState({ start: 0, end: 0 });
     const [isUploading, setIsUploading] = useState(false); // 添加上传状态锁
+    const [isUploadingSticker, setIsUploadingSticker] = useState(false); // 表情包上传锁（避免重复上传）
     const [isVoiceMode, setIsVoiceMode] = useState(false); // 语音模式（待实现）
     const [inputHeight, setInputHeight] = useState(40); // 输入框高度，默认40（一行）
     const [contentHeight, setContentHeight] = useState(0); // 内容实际高度，用于判断是否需要滚动
+    const [stickers, setStickers] = useState<StickerItem[]>([]); // 我的表情包列表（本地持久化）
 
     const $input = useRef<TextInput>();
     // 保存最新 message，供 draftApiRef.getText 读取
@@ -105,6 +112,28 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
     useEffect(() => {
         $messageRef.current = message;
     }, [message]);
+
+    /**
+     * 加载本地表情包列表（先做本机持久化）
+     * - 不依赖服务端接口，避免后端未实现导致报错
+     * - 表情包文件本身会通过 uploadFile 上传到服务端/对象存储
+     */
+    useEffect(() => {
+        let isMounted = true;
+        async function load() {
+            if (!isLogin || !user?._id) {
+                return;
+            }
+            const list = await loadStickers(user._id);
+            if (isMounted) {
+                setStickers(list);
+            }
+        }
+        load();
+        return () => {
+            isMounted = false;
+        };
+    }, [isLogin, user?._id]);
 
     function setInputText(text = '') {
         // iossetNativeProps无效, 解决办法参考:https://github.com/facebook/react-native/issues/18272
@@ -403,6 +432,121 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
                 setIsUploading(false);
             }
         }
+    }
+
+    /**
+     * 表情包：添加（从相册选择 -> 校验大小/类型 -> 上传 -> 写入本地列表）
+     * 仅允许图片和 GIF，且会限制大小，避免对服务器/用户流量造成压力。
+     */
+    async function handleAddSticker() {
+        if (isUploadingSticker) {
+            Toast.warning('正在上传表情包，请稍候...');
+            return;
+        }
+
+        // 申请相册权限
+        const currentPermission = await ImagePicker.getMediaLibraryPermissionsAsync();
+        if (currentPermission.accessPrivileges === 'none') {
+            if (currentPermission.canAskAgain) {
+                const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (permission.accessPrivileges === 'none') {
+                    Toast.warning('需要相册权限才能添加表情包');
+                    return;
+                }
+            } else {
+                Toast.warning('需要相册权限才能添加表情包');
+                return;
+            }
+        }
+
+        // 选择图片（包含 gif）
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            base64: true,
+            quality: 1,
+        });
+
+        if (result.cancelled || !result.base64) {
+            return;
+        }
+
+        // 校验类型/大小
+        const check = validateSticker({ uri: result.uri, base64: result.base64 });
+        if (!check.ok) {
+            Toast.warning(check.reason);
+            return;
+        }
+
+        setIsUploadingSticker(true);
+        try {
+            Toast.show('正在上传表情包…', 'warning');
+            const key = `Sticker/${user._id}_${Date.now()}`;
+            const url = await uploadFileWithProgress(result.base64 as string, key);
+
+            const newSticker: StickerItem = {
+                id: `${user._id}_${Date.now()}`,
+                url,
+                mime: check.mime,
+                width: (result as any).width,
+                height: (result as any).height,
+                createdAt: Date.now(),
+            };
+
+            // 新表情包插到最前面（紧随“添加”按钮之后）
+            const next = [newSticker, ...stickers];
+            setStickers(next);
+            await saveStickers(user._id, next);
+
+            Toast.success('表情包已添加');
+        } catch (error: any) {
+            Toast.danger(`表情包上传失败: ${error?.message || error}`);
+        } finally {
+            setIsUploadingSticker(false);
+        }
+    }
+
+    /**
+     * 点击表情包直接发送（与微信体验类似：点一下就发出去）
+     * 为了兼容现有服务端/消息渲染，这里复用 image 消息类型。
+     */
+    async function handleSendSticker(sticker: StickerItem) {
+        try {
+            const w = sticker.width || 200;
+            const h = sticker.height || 200;
+            const content = `${sticker.url}?width=${w}&height=${h}`;
+            const id = addSelfMessage('image', content);
+            await sendMessage(id, 'image', content);
+        } catch (e: any) {
+            Toast.danger(`发送表情包失败: ${e?.message || e}`);
+        }
+    }
+
+    /**
+     * 长按删除表情包（本地删除 + 持久化）
+     * 说明：目前“表情包列表”是本机 AsyncStorage；后续接入服务端接口时，这里可同时调用 deleteUserSticker。
+     */
+    function handleDeleteSticker(sticker: StickerItem) {
+        ActionSheet.show(
+            {
+                options: ['删除表情包', '取消'],
+                cancelButtonIndex: 1,
+                destructiveButtonIndex: 0,
+                title: '表情包操作',
+            },
+            async (buttonIndex: number) => {
+                if (buttonIndex !== 0) {
+                    return;
+                }
+                try {
+                    const next = stickers.filter((s) => s.id !== sticker.id);
+                    setStickers(next);
+                    await saveStickers(user._id, next);
+                    Toast.success('已删除');
+                } catch (e: any) {
+                    Toast.danger(`删除失败: ${e?.message || e}`);
+                }
+            },
+        );
     }
 
     // 处理输入框内容大小变化，动态调整高度
@@ -776,10 +920,60 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
                                     ))}
                                 </ScrollView>
                             ) : expressionType === 'sticker' ? (
-                                // 表情包（待实现）
-                                <View style={styles.placeholderContainer}>
-                                    <Text style={styles.placeholderText}>表情包功能待实现</Text>
-                                </View>
+                                // 表情包：我的表情包（第一个为“添加”按钮）
+                                <ScrollView
+                                    style={styles.expressionScrollView}
+                                    // 与默认表情保持一致：使用 ScrollView + flexWrap 网格，超出固定高度则竖向滚动
+                                    contentContainerStyle={[styles.expressionPreviewContainer, styles.stickerContainer]}
+                                    showsVerticalScrollIndicator={true}
+                                >
+                                    {/* 第一个格子：添加表情包 */}
+                                    <TouchableOpacity
+                                        style={styles.stickerAddItem}
+                                        activeOpacity={0.8}
+                                        onPress={(e) => {
+                                            e.stopPropagation();
+                                            handleAddSticker();
+                                        }}
+                                    >
+                                        <Ionicons name="ios-add" size={28} color="#2a7bf6" />
+                                        <Text style={styles.stickerAddText}>添加</Text>
+                                    </TouchableOpacity>
+
+                                    {/* 已添加的表情包列表 */}
+                                    {stickers.map((s) => (
+                                        <TouchableOpacity
+                                            key={s.id}
+                                            style={styles.stickerItem}
+                                            activeOpacity={0.85}
+                                            onPress={(e) => {
+                                                e.stopPropagation();
+                                                handleSendSticker(s);
+                                                // 选择表情包后不自动收起菜单，方便连续发送
+                                            }}
+                                            onLongPress={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteSticker(s);
+                                            }}
+                                            delayLongPress={350}
+                                        >
+                                            <Image
+                                                // RN Image：直接显示远端图片/gif，不走 OSS 处理参数，避免 gif 动画丢失
+                                                source={{
+                                                    uri: s.url,
+                                                    cache: 'force-cache',
+                                                    headers: {
+                                                        Referer: referer,
+                                                    },
+                                                }}
+                                                // TS 这里会把 StyleSheet 的 style 推断成 ViewStyle|TextStyle|ImageStyle 的联合类型
+                                                // Image 组件需要 ImageStyle，因此做一次类型断言（不影响运行时）
+                                                style={styles.stickerImage as any}
+                                                resizeMode="contain"
+                                            />
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
                             ) : (
                                 // 搜表情（待实现）
                                 <View style={styles.placeholderContainer}>
@@ -1029,6 +1223,50 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         margin: 4,
+    },
+    /**
+     * 表情包网格容器
+     * - 使用 flexWrap 自动换行
+     * - padding 让整体更像“面板”
+     */
+    stickerContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        padding: 4,
+    },
+    /**
+     * 表情包项：比默认表情更大，更接近微信的“表情包”触感
+     */
+    stickerItem: {
+        width: StickerSize,
+        height: StickerSize,
+        padding: 6,
+    },
+    stickerImage: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 10,
+        backgroundColor: 'rgba(255,255,255,0.6)',
+    },
+    /**
+     * “添加表情包”占位按钮（正方形）
+     */
+    stickerAddItem: {
+        width: StickerSize,
+        height: StickerSize,
+        borderRadius: 10,
+        margin: 6,
+        backgroundColor: 'rgba(255,255,255,0.8)',
+        borderWidth: 1,
+        borderColor: 'rgba(42,123,246,0.25)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    stickerAddText: {
+        marginTop: 6,
+        fontSize: 12,
+        color: '#2a7bf6',
+        fontWeight: '600',
     },
     expressionPreviewMore: {
         width: '100%',

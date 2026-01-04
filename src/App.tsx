@@ -27,6 +27,7 @@ import BackButton from './components/BackButton';
 import SelfSettings from './pages/SelfSettings/SelfSettings';
 import AnimatedTabIcon from './components/AnimatedTabIcon';
 import { ToastHost } from './components/Toast';
+import { hapticLight } from './utils/haptics';
 
 type Props = {
     title: string;
@@ -130,6 +131,16 @@ function App({ title, primaryColor, isLogin }: Props) {
                                     component={ChatList}
                                     initial
                                     hideNavBar={!isLogin}
+                                    /**
+                                     * 底部导航点击反馈（最轻震动）
+                                     * 注：不能只依赖 icon 的 focused 变化，否则“重复点击当前 tab”不会触发
+                                     */
+                                    tabBarOnPress={({ defaultHandler }: any) => {
+                                        hapticLight();
+                                        if (defaultHandler) {
+                                            defaultHandler();
+                                        }
+                                    }}
                                     icon={({ focused }) => (
                                         <AnimatedTabIcon
                                             name="chatbubble-ellipses-outline"
@@ -156,6 +167,15 @@ function App({ title, primaryColor, isLogin }: Props) {
                                         backgroundColor: primaryColor10,
                                         borderBottomWidth: 0,
                                     }}
+                                    /**
+                                     * 底部导航点击反馈（最轻震动）
+                                     */
+                                    tabBarOnPress={({ defaultHandler }: any) => {
+                                        hapticLight();
+                                        if (defaultHandler) {
+                                            defaultHandler();
+                                        }
+                                    }}
                                     icon={({ focused }) => (
                                         <AnimatedTabIcon name="people-outline" focused={!!focused} />
                                     )}
@@ -165,6 +185,15 @@ function App({ title, primaryColor, isLogin }: Props) {
                                     component={Other}
                                     hideNavBar
                                     title="其它"
+                                    /**
+                                     * 底部导航点击反馈（最轻震动）
+                                     */
+                                    tabBarOnPress={({ defaultHandler }: any) => {
+                                        hapticLight();
+                                        if (defaultHandler) {
+                                            defaultHandler();
+                                        }
+                                    }}
                                     icon={({ focused }) => (
                                         <AnimatedTabIcon name="aperture-outline" focused={!!focused} />
                                     )}

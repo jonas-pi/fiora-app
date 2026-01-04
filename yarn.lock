@@ -7002,6 +7002,11 @@
     "expo-modules-core" "~0.2.0"
     "fontfaceobserver" "^2.1.0"
 
+"expo-haptics@~10.1.0":
+  "integrity" "sha512-2rpixkP3LSCwaJAmbbs0CSqbY7lSk7Ytay4UAYWg3YiJ05My7+MGMPbQJARyAMI5JQNuzcdsZN74btSusBvgYQ=="
+  "resolved" "https://registry.npmjs.org/expo-haptics/-/expo-haptics-10.1.0.tgz"
+  "version" "10.1.0"
+
 "expo-image-loader@~2.2.0":
   "integrity" "sha512-kTs/lW8LUXYFQ5t8wkdJs0A41zd7dIB8uRRC0a9L0EurSGUvQWiVTbHQoLo/GYWL7nM85OaPAe2qkHfcz5KeyA=="
   "resolved" "https://registry.npmjs.org/expo-image-loader/-/expo-image-loader-2.2.0.tgz"

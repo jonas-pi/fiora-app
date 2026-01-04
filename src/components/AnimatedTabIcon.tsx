@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Vibration } from 'react-native';
+import { Animated } from 'react-native';
 import { Icon } from 'native-base';
+import { hapticLight } from '../utils/haptics';
 
 type Props = {
     name: string;
@@ -27,8 +28,8 @@ export default function AnimatedTabIcon({
         if (!focused) {
             return;
         }
-        // 轻震动反馈：与筛选条保持一致（只能在 focused 变化时触发）
-        Vibration.vibrate(8);
+        // 轻触反馈：与筛选条保持一致（只能在 focused 变化时触发）
+        hapticLight();
         scale.stopAnimation();
         Animated.sequence([
             Animated.timing(scale, {

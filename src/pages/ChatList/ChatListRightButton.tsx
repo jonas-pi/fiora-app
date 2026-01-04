@@ -10,13 +10,13 @@ import {
     Easing,
     Dimensions,
     ScrollView,
-    Vibration,
 } from 'react-native';
 import { Actions } from 'react-native-router-flux';
 import { createGroup, search } from '../../service';
 import action from '../../state/action';
 import { BORDER_RADIUS } from '../../utils/styles';
 import Avatar from '../../components/Avatar';
+import { hapticLight } from '../../utils/haptics';
 
 // 使用自定义 Modal 替代 Dialog，完全控制样式
 function ChatListRightButton() {
@@ -105,7 +105,7 @@ function ChatListRightButton() {
                     };
                     playRotateFeedback();
                     // 轻震动反馈：与筛选条保持一致
-                    Vibration.vibrate(8);
+                    hapticLight();
                     setShowQuickMenu(true);
                 }}
             >

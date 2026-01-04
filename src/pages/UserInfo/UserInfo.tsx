@@ -45,7 +45,8 @@ function UserInfo({ user }: Props) {
         if (currentLinkman._id === friend._id) {
             Actions.pop();
         } else {
-            Actions.popTo('chatlist');
+            // Tab 场景请用 jump（避免 popTo 在 Tabs 嵌套下找不到 route 导致“点击不动”）
+            Actions.chatlist();
             Actions.push('chat', { title: friend.name });
         }
     }
@@ -61,7 +62,8 @@ function UserInfo({ user }: Props) {
         if (isSuccess) {
             action.removeLinkman(friend._id);
             if (currentLinkman._id === friend._id) {
-                Actions.popTo('chatlist');
+                // Tab 场景请用 jump（避免 popTo 在 Tabs 嵌套下找不到 route 导致“点击不动”）
+                Actions.chatlist();
             } else {
                 Actions.pop();
             }
@@ -120,7 +122,8 @@ function UserInfo({ user }: Props) {
             if (currentLinkman._id === friend?._id) {
                 Actions.pop();
             } else {
-                Actions.popTo('chatlist');
+                // Tab 场景请用 jump（避免 popTo 在 Tabs 嵌套下找不到 route 导致“点击不动”）
+                Actions.chatlist();
                 Actions.push('chat', { title: newLinkman.username });
             }
         }

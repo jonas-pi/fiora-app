@@ -15,7 +15,6 @@ import {
     Platform,
     Pressable,
     Easing,
-    Vibration,
 } from 'react-native';
 import { Actions } from 'react-native-router-flux';
 
@@ -30,6 +29,7 @@ import { getUserOnlineStatus, deleteFriend } from '../../service';
 import Toast from '../../components/Toast';
 import { BORDER_RADIUS } from '../../utils/styles';
 import { useTabSlideIn } from '../../hooks/useTabSlideIn';
+import { hapticLight } from '../../utils/haptics';
 
 /**
  * 联系人页面组件
@@ -279,7 +279,7 @@ export default function Contacts({ navigation }: any) {
                                 onPress={() => {
                                     closeAllSwipes();
                                     if (filter !== 'all') {
-                                        Vibration.vibrate(8);
+                                        hapticLight();
                                     }
                                     setFilter('all');
                                 }}
@@ -293,7 +293,7 @@ export default function Contacts({ navigation }: any) {
                                 onPress={() => {
                                     closeAllSwipes();
                                     if (filter !== 'online') {
-                                        Vibration.vibrate(8);
+                                        hapticLight();
                                     }
                                     setFilter('online');
                                 }}
@@ -307,7 +307,7 @@ export default function Contacts({ navigation }: any) {
                                 onPress={() => {
                                     closeAllSwipes();
                                     if (filter !== 'offline') {
-                                        Vibration.vibrate(8);
+                                        hapticLight();
                                     }
                                     setFilter('offline');
                                 }}
