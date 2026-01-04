@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, KeyboardAvoidingView, ScrollView, Dimensions, Pressable, View, Platform } from 'react-native';
+import { StyleSheet, KeyboardAvoidingView, ScrollView, Dimensions, Pressable, View, Platform, InteractionManager } from 'react-native';
 import Constants from 'expo-constants';
 import { Actions } from 'react-native-router-flux';
 
@@ -58,6 +58,7 @@ export default function Chat() {
     const { focus } = useStore();
     const linkman = useFocusLinkman();
     const $messageList = useRef<ScrollView>();
+    const [isMessageListReady, setIsMessageListReady] = useState(false); // 延后渲染 MessageList，避免进入瞬间卡顿
     const [hasMenuOpen, setHasMenuOpen] = useState(false); // 菜单是否打开
     const closeAllMenusRef = useRef<(() => void) | undefined>(); // 关闭菜单的函数引用
     const inputDraftRef = useRef<InputDraftApi | undefined>(); // 输入框草稿操作
@@ -82,10 +83,28 @@ export default function Chat() {
             return;
         }
         const request = linkman.type === 'group' ? fetchGroupOnlineMembers : fetchUserOnlineStatus;
-        request();
+        // 进入群组/好友聊天时，延后网络请求到转场完成之后，减少“刚进入就卡一下”
+        InteractionManager.runAfterInteractions(() => {
+            request();
+        });
         const timer = setInterval(() => request(), 1000 * 60);
         return () => clearInterval(timer);
     }, [focus, isLogin]);
+
+    /**
+     * 进入聊天页瞬间卡顿（大概率是 MessageList 首次渲染/测量/scrollToEnd 触发的）
+     * 这里把重渲染延后到转场结束之后执行，让“点进去那一下”更顺滑
+     */
+    useEffect(() => {
+        setIsMessageListReady(false);
+        const task = InteractionManager.runAfterInteractions(() => {
+            setIsMessageListReady(true);
+        });
+        return () => {
+            // @ts-ignore
+            task?.cancel?.();
+        };
+    }, [focus]);
 
     useEffect(() => {
         if (Actions.currentScene !== 'chat') {
@@ -126,9 +145,12 @@ export default function Chat() {
     }
 
     function handleInputHeightChange() {
-        if ($messageList.current) {
-            scrollToEnd();
-        }
+        // 输入框高度变化（或键盘/菜单变化）时，等交互/转场结束再滚动到底部，避免进入群组时“重刷”导致卡顿
+        InteractionManager.runAfterInteractions(() => {
+            if ($messageList.current) {
+                scrollToEnd();
+            }
+        });
     }
 
     /**
@@ -175,11 +197,16 @@ export default function Chat() {
             >
                 {/* 
                 // @ts-ignore */}
-                <MessageList
-                    $scrollView={$messageList}
-                    onEditDraft={handleEditDraft}
-                    onQuoteDraft={handleQuoteDraft}
-                />
+                {isMessageListReady ? (
+                    <MessageList
+                        $scrollView={$messageList}
+                        onEditDraft={handleEditDraft}
+                        onQuoteDraft={handleQuoteDraft}
+                    />
+                ) : (
+                    // 占位容器：保持布局稳定，避免白屏闪一下
+                    <View style={{ flex: 1 }} />
+                )}
                 {/* 当有菜单打开时，添加覆盖层来处理点击聊天记录区域关闭菜单 */}
                 {/* 覆盖层使用 pointerEvents="box-none"，让子元素（Input 和菜单）可以接收触摸事件 */}
                 {hasMenuOpen && (

@@ -1,7 +1,7 @@
 import { Button, Content, Form, Input, Item, Label, Text, View } from 'native-base';
 import Toast from '../../components/Toast';
-import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, Platform, Clipboard } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, TouchableOpacity, Platform, Clipboard, InteractionManager } from 'react-native';
 import { Actions } from 'react-native-router-flux';
 import * as ImagePicker from 'expo-image-picker';
 import PageContainer from '../../components/PageContainer';
@@ -15,6 +15,7 @@ import fetch from '../../utils/fetch';
 import { buttonStyles, smallButtonStyles, BORDER_RADIUS } from '../../utils/styles';
 
 function SelfSettings() {
+    const [isPageReady, setIsPageReady] = useState(false); // 延后渲染重UI，减少进入瞬间卡顿
     const user = useUser();
     const [username, setUsername] = useState(user.username || '');
     const [avatar, setAvatar] = useState(user.avatar || '');
@@ -26,6 +27,17 @@ function SelfSettings() {
     const [isResettingAvatar, setIsResettingAvatar] = useState(false);
     // 输入框焦点状态，用于控制 placeholder 显示
     const [focusedInput, setFocusedInput] = useState<string | null>(null);
+
+    useEffect(() => {
+        // 等转场动画/交互结束后再渲染大量表单内容，避免“点头像进入个人信息”瞬间掉帧
+        const task = InteractionManager.runAfterInteractions(() => {
+            setIsPageReady(true);
+        });
+        return () => {
+            // @ts-ignore
+            task?.cancel?.();
+        };
+    }, []);
 
     async function handleSelectAvatar() {
         if (isUploadingAvatar) {
@@ -210,115 +222,119 @@ function SelfSettings() {
 
     return (
         <PageContainer>
-            <Content>
-                <View style={styles.container}>
-                    <View style={styles.avatarContainer}>
-                        <TouchableOpacity onPress={handleSelectAvatar} disabled={isUploadingAvatar}>
-                            <Avatar src={avatar} size={100} />
-                            {isUploadingAvatar && (
-                                <View style={styles.uploadingOverlay}>
-                                    <Text style={styles.uploadingText}>上传中...</Text>
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                        <Text style={styles.avatarHint}>点击头像修改</Text>
-                        <Button
-                            small
-                            style={[styles.resetButton, smallButtonStyles]}
-                            onPress={handleResetAvatar}
-                            disabled={isResettingAvatar || isUploadingAvatar}
-                        >
-                            <Text style={styles.resetButtonText}>
-                                {isResettingAvatar ? '重置中...' : '重新获取默认头像'}
-                            </Text>
-                        </Button>
-                    </View>
+            {isPageReady ? (
+                <Content>
+                    <View style={styles.container}>
+                        <View style={styles.avatarContainer}>
+                            <TouchableOpacity onPress={handleSelectAvatar} disabled={isUploadingAvatar}>
+                                <Avatar src={avatar} size={100} />
+                                {isUploadingAvatar && (
+                                    <View style={styles.uploadingOverlay}>
+                                        <Text style={styles.uploadingText}>上传中...</Text>
+                                    </View>
+                                )}
+                            </TouchableOpacity>
+                            <Text style={styles.avatarHint}>点击头像修改</Text>
+                            <Button
+                                small
+                                style={[styles.resetButton, smallButtonStyles]}
+                                onPress={handleResetAvatar}
+                                disabled={isResettingAvatar || isUploadingAvatar}
+                            >
+                                <Text style={styles.resetButtonText}>
+                                    {isResettingAvatar ? '重置中...' : '重新获取默认头像'}
+                                </Text>
+                            </Button>
+                        </View>
 
-                    <Form style={styles.form}>
-                        {/* 显示用户ID（只读，点击可复制） */}
-                        <View style={styles.formItemContainer}>
-                            <View style={styles.labelInputContainer}>
-                                <Label style={styles.label}>用户ID</Label>
-                                <TouchableOpacity
-                                    onPress={handleCopyUserId}
-                                    activeOpacity={0.7}
-                                    style={styles.inputTouchable}
-                                >
+                        <Form style={styles.form}>
+                            {/* 显示用户ID（只读，点击可复制） */}
+                            <View style={styles.formItemContainer}>
+                                <View style={styles.labelInputContainer}>
+                                    <Label style={styles.label}>用户ID</Label>
+                                    <TouchableOpacity
+                                        onPress={handleCopyUserId}
+                                        activeOpacity={0.7}
+                                        style={styles.inputTouchable}
+                                    >
+                                        <Input
+                                            value={user._id || ''}
+                                            editable={false}
+                                            style={[styles.input, styles.readonlyInput]}
+                                            pointerEvents="none"
+                                        />
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                            <View style={styles.formItemContainer}>
+                                <View style={styles.labelInputContainer}>
+                                    <Label style={styles.label}>昵称</Label>
                                     <Input
-                                        value={user._id || ''}
-                                        editable={false}
-                                        style={[styles.input, styles.readonlyInput]}
-                                        pointerEvents="none"
+                                        value={username}
+                                        onChangeText={setUsername}
+                                        maxLength={20}
+                                        placeholder={focusedInput === 'username' ? '' : '请输入昵称'}
+                                        style={styles.input}
+                                        onFocus={() => setFocusedInput('username')}
+                                        onBlur={() => setFocusedInput(null)}
                                     />
-                                </TouchableOpacity>
+                                </View>
                             </View>
-                        </View>
-                        <View style={styles.formItemContainer}>
-                            <View style={styles.labelInputContainer}>
-                                <Label style={styles.label}>昵称</Label>
-                                <Input
-                                    value={username}
-                                    onChangeText={setUsername}
-                                    maxLength={20}
-                                    placeholder={focusedInput === 'username' ? '' : '请输入昵称'}
-                                    style={styles.input}
-                                    onFocus={() => setFocusedInput('username')}
-                                    onBlur={() => setFocusedInput(null)}
-                                />
+                            {/* 修改密码 */}
+                            <View style={styles.formItemContainer}>
+                                <View style={styles.labelInputContainer}>
+                                    <Label style={styles.label}>旧密码</Label>
+                                    <Input
+                                        value={oldPassword}
+                                        onChangeText={setOldPassword}
+                                        secureTextEntry
+                                        placeholder={focusedInput === 'oldPassword' ? '' : (oldPassword ? '' : '请输入旧密码')}
+                                        style={styles.input}
+                                        onFocus={() => setFocusedInput('oldPassword')}
+                                        onBlur={() => {
+                                            setFocusedInput(null);
+                                        }}
+                                    />
+                                </View>
                             </View>
-                        </View>
-                        {/* 修改密码 */}
-                        <View style={styles.formItemContainer}>
-                            <View style={styles.labelInputContainer}>
-                                <Label style={styles.label}>旧密码</Label>
-                                <Input
-                                    value={oldPassword}
-                                    onChangeText={setOldPassword}
-                                    secureTextEntry
-                                    placeholder={focusedInput === 'oldPassword' ? '' : (oldPassword ? '' : '请输入旧密码')}
-                                    style={styles.input}
-                                    onFocus={() => setFocusedInput('oldPassword')}
-                                    onBlur={() => {
-                                        setFocusedInput(null);
-                                    }}
-                                />
+                            <View style={styles.formItemContainer}>
+                                <View style={styles.labelInputContainer}>
+                                    <Label style={styles.label}>新密码</Label>
+                                    <Input
+                                        value={newPassword}
+                                        onChangeText={setNewPassword}
+                                        secureTextEntry
+                                        placeholder={focusedInput === 'newPassword' ? '' : (newPassword ? '' : '请输入新密码（至少6位）')}
+                                        style={styles.input}
+                                        onFocus={() => setFocusedInput('newPassword')}
+                                        onBlur={() => {
+                                            setFocusedInput(null);
+                                        }}
+                                    />
+                                </View>
                             </View>
-                        </View>
-                        <View style={styles.formItemContainer}>
-                            <View style={styles.labelInputContainer}>
-                                <Label style={styles.label}>新密码</Label>
-                                <Input
-                                    value={newPassword}
-                                    onChangeText={setNewPassword}
-                                    secureTextEntry
-                                    placeholder={focusedInput === 'newPassword' ? '' : (newPassword ? '' : '请输入新密码（至少6位）')}
-                                    style={styles.input}
-                                    onFocus={() => setFocusedInput('newPassword')}
-                                    onBlur={() => {
-                                        setFocusedInput(null);
-                                    }}
-                                />
+                            <View style={styles.formItemContainer}>
+                                <View style={styles.labelInputContainer}>
+                                    <Label style={styles.label}>确认密码</Label>
+                                    <Input
+                                        value={confirmPassword}
+                                        onChangeText={setConfirmPassword}
+                                        secureTextEntry
+                                        placeholder={focusedInput === 'confirmPassword' ? '' : (confirmPassword ? '' : '请再次输入新密码')}
+                                        style={styles.input}
+                                        onFocus={() => setFocusedInput('confirmPassword')}
+                                        onBlur={() => {
+                                            setFocusedInput(null);
+                                        }}
+                                    />
+                                </View>
                             </View>
-                        </View>
-                        <View style={styles.formItemContainer}>
-                            <View style={styles.labelInputContainer}>
-                                <Label style={styles.label}>确认密码</Label>
-                                <Input
-                                    value={confirmPassword}
-                                    onChangeText={setConfirmPassword}
-                                    secureTextEntry
-                                    placeholder={focusedInput === 'confirmPassword' ? '' : (confirmPassword ? '' : '请再次输入新密码')}
-                                    style={styles.input}
-                                    onFocus={() => setFocusedInput('confirmPassword')}
-                                    onBlur={() => {
-                                        setFocusedInput(null);
-                                    }}
-                                />
-                            </View>
-                        </View>
-                    </Form>
-                </View>
-            </Content>
+                        </Form>
+                    </View>
+                </Content>
+            ) : (
+                <View style={{ flex: 1 }} />
+            )}
             <Button
                 primary
                 block

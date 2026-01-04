@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, Animated, Dimensions, Easing } from 'react-native';
 import { Scene, Router, Stack, Tabs, Lightbox } from 'react-native-router-flux';
 import { Icon, Root } from 'native-base';
 import { enableScreens } from 'react-native-screens';
@@ -25,6 +25,8 @@ import SearchResult from './pages/SearchResult/SearchResult';
 import GroupInfo from './pages/GroupInfo/GroupInfo';
 import BackButton from './components/BackButton';
 import SelfSettings from './pages/SelfSettings/SelfSettings';
+import AnimatedTabIcon from './components/AnimatedTabIcon';
+import { ToastHost } from './components/Toast';
 
 type Props = {
     title: string;
@@ -34,6 +36,62 @@ type Props = {
 
 // 启用 native screens，可显著改善页面切换/侧滑返回的流畅度
 enableScreens();
+
+// 全局页面切换动画：从哪儿来回哪儿去的轻微缩放 + 淡入
+// react-native-router-flux(v4) 底层是 react-navigation stack 的 transitionConfig
+const transitionConfig = () => ({
+    transitionSpec: {
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        timing: Animated.timing,
+        // @ts-ignore react-navigation v4 supports this in many builds
+        useNativeDriver: true,
+    },
+    screenInterpolator: (sceneProps: any) => {
+        const { position, scene } = sceneProps;
+        const index = scene.index;
+        const { width: W, height: H } = Dimensions.get('window');
+        const centerX = W / 2;
+        const centerY = H / 2;
+
+        // originX/originY 由触发跳转的点击位置传入（pageX/pageY）
+        const originX = scene?.route?.params?.originX ?? centerX;
+        const originY = scene?.route?.params?.originY ?? centerY;
+
+        // 减小缩放幅度，降低 GPU 压力，提升流畅度
+        const startScale = 0.93;
+        const scale = position.interpolate({
+            inputRange: [index - 1, index],
+            outputRange: [startScale, 1],
+            extrapolate: 'clamp',
+        });
+        const opacity = position.interpolate({
+            inputRange: [index - 1, index],
+            outputRange: [0.15, 1],
+            extrapolate: 'clamp',
+        });
+
+        // 让“从哪儿来回哪儿去”：打开时从点击点放大，返回时缩回到点击点
+        // 近似做法：在 startScale 时，通过平移让视觉中心偏向 origin
+        const startTranslateX = (originX - centerX) * (1 - startScale);
+        const startTranslateY = (originY - centerY) * (1 - startScale);
+        const translateX = position.interpolate({
+            inputRange: [index - 1, index],
+            outputRange: [startTranslateX, 0],
+            extrapolate: 'clamp',
+        });
+        const translateY = position.interpolate({
+            inputRange: [index - 1, index],
+            outputRange: [startTranslateY, 0],
+            extrapolate: 'clamp',
+        });
+
+        return {
+            opacity,
+            transform: [{ translateX }, { translateY }, { scale }],
+        };
+    },
+});
 
 function App({ title, primaryColor, isLogin }: Props) {
     const primaryColor10 = `rgba(${primaryColor}, 1)`;
@@ -53,7 +111,12 @@ function App({ title, primaryColor, isLogin }: Props) {
         <View style={styles.container}>
             <Root>
                 <Router>
-                    <Stack hideNavBar>
+                    <Stack
+                        hideNavBar
+                        transitionConfig={transitionConfig}
+                        // 避免转场时卡片背景透明导致“闪一下”
+                        cardStyle={{ backgroundColor: 'rgba(241, 241, 241, 1)' }}
+                    >
                         <Lightbox>
                             <Tabs
                                 key="tabs"
@@ -68,12 +131,9 @@ function App({ title, primaryColor, isLogin }: Props) {
                                     initial
                                     hideNavBar={!isLogin}
                                     icon={({ focused }) => (
-                                        <Icon
+                                        <AnimatedTabIcon
                                             name="chatbubble-ellipses-outline"
-                                            style={{
-                                                fontSize: 24,
-                                                color: focused ? 'white' : '#bbb',
-                                            }}
+                                            focused={!!focused}
                                         />
                                     )}
                                     renderLeftButton={() => <SelfInfo />}
@@ -86,16 +146,18 @@ function App({ title, primaryColor, isLogin }: Props) {
                                 <Scene
                                     key="contacts"
                                     component={Contacts}
-                                    hideNavBar
-                                    title="联系人"
+                                    hideNavBar={!isLogin}
+                                    title=""
+                                    // 强制不渲染标题，避免出现类似 "_contacts" 的默认 title
+                                    renderTitle={() => null}
+                                    renderLeftButton={() => <SelfInfo />}
+                                    renderRightButton={() => <ChatListRightButton />}
+                                    navigationBarStyle={{
+                                        backgroundColor: primaryColor10,
+                                        borderBottomWidth: 0,
+                                    }}
                                     icon={({ focused }) => (
-                                        <Icon
-                                            name="people-outline"
-                                            style={{
-                                                fontSize: 24,
-                                                color: focused ? 'white' : '#bbb',
-                                            }}
-                                        />
+                                        <AnimatedTabIcon name="people-outline" focused={!!focused} />
                                     )}
                                 />
                                 <Scene
@@ -104,13 +166,7 @@ function App({ title, primaryColor, isLogin }: Props) {
                                     hideNavBar
                                     title="其它"
                                     icon={({ focused }) => (
-                                        <Icon
-                                            name="aperture-outline"
-                                            style={{
-                                                fontSize: 24,
-                                                color: focused ? 'white' : '#bbb',
-                                            }}
-                                        />
+                                        <AnimatedTabIcon name="aperture-outline" focused={!!focused} />
                                     )}
                                 />
                             </Tabs>
@@ -177,6 +233,8 @@ function App({ title, primaryColor, isLogin }: Props) {
 
             <Loading />
             <Notification />
+            {/* 全局提示条：自研 ToastHost（完全规避 native-base Toast 的 Android 白条问题） */}
+            <ToastHost />
         </View>
     );
 }
@@ -189,5 +247,6 @@ export default connect((state: State) => ({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: '#f1f1f1',
     },
 });

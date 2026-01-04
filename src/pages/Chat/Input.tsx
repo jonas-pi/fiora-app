@@ -22,7 +22,7 @@ import action from '../../state/action';
 import fetch from '../../utils/fetch';
 import { isiOS } from '../../utils/platform';
 import expressions from '../../utils/expressions';
-import { Toast } from 'native-base';
+import Toast from '../../components/Toast';
 
 import Expression from '../../components/Expression';
 import { useIsLogin, useStore, useUser } from '../../hooks/useStore';
@@ -293,7 +293,7 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
         if (!result.cancelled && result.base64) {
             // 防止并发上传
             if (isUploading) {
-                Toast.show({ text: '正在上传图片，请稍候...', type: 'warning' });
+                Toast.warning('正在上传图片，请稍候...');
                 return;
             }
             
@@ -331,7 +331,7 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
             } catch (error: any) {
                 // 上传失败，删除本地消息
                 action.deleteLinkmanMessage(focus, id);
-                Toast.show({ text: '上传图片失败', type: 'danger' });
+                Toast.danger('上传图片失败');
             } finally {
                 setIsUploading(false);
             }
@@ -360,7 +360,7 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
         if (!result.cancelled && result.base64) {
             // 防止并发上传
             if (isUploading) {
-                Toast.show({ text: '正在上传图片，请稍候...', type: 'warning' });
+                Toast.warning('正在上传图片，请稍候...');
                 return;
             }
             
@@ -398,7 +398,7 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
             } catch (error: any) {
                 // 上传失败，删除本地消息
                 action.deleteLinkmanMessage(focus, id);
-                Toast.show({ text: '上传图片失败', type: 'danger' });
+                Toast.danger('上传图片失败');
             } finally {
                 setIsUploading(false);
             }
@@ -506,7 +506,7 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
     // 处理语音按钮点击（待实现）
     function handleVoiceButton() {
         // TODO: 实现语音功能
-        Toast.show({ text: '语音功能待实现', type: 'warning' });
+        Toast.warning('语音功能待实现');
     }
 
     // 处理二级菜单按钮点击（方块布局）

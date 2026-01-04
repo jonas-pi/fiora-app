@@ -15,6 +15,7 @@ import {
     Platform,
     Pressable,
     Easing,
+    Vibration,
 } from 'react-native';
 import { Actions } from 'react-native-router-flux';
 
@@ -28,6 +29,7 @@ import fetch from '../../utils/fetch';
 import { getUserOnlineStatus, deleteFriend } from '../../service';
 import Toast from '../../components/Toast';
 import { BORDER_RADIUS } from '../../utils/styles';
+import { useTabSlideIn } from '../../hooks/useTabSlideIn';
 
 /**
  * 联系人页面组件
@@ -36,7 +38,8 @@ import { BORDER_RADIUS } from '../../utils/styles';
 // 分类类型
 type FilterType = 'all' | 'online' | 'offline';
 
-export default function Contacts() {
+export default function Contacts({ navigation }: any) {
+    const { tabAnimatedStyle } = useTabSlideIn(navigation, 1);
     const [refreshing, setRefreshing] = useState(false);
     const [filter, setFilter] = useState<FilterType>('all'); // 默认显示"全部"
     const [openSwipeId, setOpenSwipeId] = useState<string | null>(null); // 当前打开的滑动项ID
@@ -164,9 +167,11 @@ export default function Contacts() {
      * 处理点击联系人
      * 跳转到聊天页面并更新历史记录
      */
-    function handleContactPress(friend: Friend) {
+    function handleContactPress(friend: Friend, event?: any) {
+        const originX = event?.nativeEvent?.pageX;
+        const originY = event?.nativeEvent?.pageY;
         action.setFocus(friend._id);
-        Actions.chat({ title: formatLinkmanName(friend) });
+        Actions.push('chat', { title: formatLinkmanName(friend), originX, originY });
 
         // 如果有最后一条消息，更新历史记录
         const lastMessage = friend.messages.length > 0 ? friend.messages[friend.messages.length - 1] : null;
@@ -259,98 +264,112 @@ export default function Contacts() {
 
     return (
         <PageContainer>
-            {/* 分类栏 */}
-            <TouchableOpacity
-                activeOpacity={1}
-                onPress={closeAllSwipes}
-                style={styles.filterWrapper}
-            >
-                <View style={styles.filterContainer}>
-                    <TouchableOpacity
-                        style={[styles.filterItem, filter === 'all' && styles.filterItemActive]}
-                        onPress={() => {
-                            closeAllSwipes();
-                            setFilter('all');
-                        }}
-                    >
-                        <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>
-                            全部
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.filterItem, filter === 'online' && styles.filterItemActive]}
-                        onPress={() => {
-                            closeAllSwipes();
-                            setFilter('online');
-                        }}
-                    >
-                        <Text style={[styles.filterText, filter === 'online' && styles.filterTextActive]}>
-                            在线
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.filterItem, filter === 'offline' && styles.filterItemActive]}
-                        onPress={() => {
-                            closeAllSwipes();
-                            setFilter('offline');
-                        }}
-                    >
-                        <Text style={[styles.filterText, filter === 'offline' && styles.filterTextActive]}>
-                            离线
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-            </TouchableOpacity>
-            <View style={styles.scrollViewWrapper}>
-                <ScrollView
-                    style={styles.container}
-                    onScrollBeginDrag={() => {
-                        closeAllSwipes();
-                    }}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={handleRefresh}
-                            tintColor="#2a7bf6"
-                            colors={['#2a7bf6']}
-                            title="下拉刷新"
-                            titleColor="#2a7bf6"
-                        />
-                    }
+            <Animated.View style={[{ flex: 1 }, tabAnimatedStyle]}>
+                {/* 分类栏 */}
+                <TouchableOpacity
+                    activeOpacity={1}
+                    onPress={closeAllSwipes}
+                    style={styles.filterWrapper}
                 >
-                    {!isLogin ? (
-                        <TouchableOpacity
-                            activeOpacity={1}
-                            onPress={closeAllSwipes}
-                            style={styles.emptyContainer}
-                        >
-                            <Text style={styles.emptyText}>请先登录以查看联系人</Text>
-                        </TouchableOpacity>
-                    ) : friends.length === 0 ? (
-                        <TouchableOpacity
-                            activeOpacity={1}
-                            onPress={closeAllSwipes}
-                            style={styles.emptyContainer}
-                        >
-                            <Text style={styles.emptyText}>
-                                {filter === 'all' ? '暂无联系人' : filter === 'online' ? '暂无在线联系人' : '暂无离线联系人'}
-                            </Text>
-                        </TouchableOpacity>
-                    ) : (
-                        <>
-                            {friends.map((friend) => renderContact(friend))}
-                            {/* 当有菜单打开时，在列表底部添加一个透明的点击区域，用于关闭菜单 */}
-                            {openSwipeId && (
-                                <TouchableOpacity
-                                    activeOpacity={1}
-                                    onPress={closeAllSwipes}
-                                    style={styles.closeArea}
-                                />
-                            )}
-                        </>
-                    )}
-                </ScrollView>
-            </View>
+                    {/* 外层阴影容器：Android 用实色 + elevation，避免半透明圆角出现白条 */}
+                    <View style={styles.filterShadow}>
+                        <View style={styles.filterContainer}>
+                            <TouchableOpacity
+                                style={[styles.filterItem, filter === 'all' && styles.filterItemActive]}
+                                onPress={() => {
+                                    closeAllSwipes();
+                                    if (filter !== 'all') {
+                                        Vibration.vibrate(8);
+                                    }
+                                    setFilter('all');
+                                }}
+                            >
+                                <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>
+                                    全部
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.filterItem, filter === 'online' && styles.filterItemActive]}
+                                onPress={() => {
+                                    closeAllSwipes();
+                                    if (filter !== 'online') {
+                                        Vibration.vibrate(8);
+                                    }
+                                    setFilter('online');
+                                }}
+                            >
+                                <Text style={[styles.filterText, filter === 'online' && styles.filterTextActive]}>
+                                    在线
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.filterItem, filter === 'offline' && styles.filterItemActive]}
+                                onPress={() => {
+                                    closeAllSwipes();
+                                    if (filter !== 'offline') {
+                                        Vibration.vibrate(8);
+                                    }
+                                    setFilter('offline');
+                                }}
+                            >
+                                <Text style={[styles.filterText, filter === 'offline' && styles.filterTextActive]}>
+                                    离线
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </TouchableOpacity>
+                <View style={styles.scrollViewWrapper}>
+                    <ScrollView
+                        style={styles.container}
+                        onScrollBeginDrag={() => {
+                            closeAllSwipes();
+                        }}
+                        refreshControl={
+                            <RefreshControl
+                                refreshing={refreshing}
+                                onRefresh={handleRefresh}
+                                tintColor="#2a7bf6"
+                                colors={['#2a7bf6']}
+                                title="下拉刷新"
+                                titleColor="#2a7bf6"
+                            />
+                        }
+                    >
+                        {!isLogin ? (
+                            <TouchableOpacity
+                                activeOpacity={1}
+                                onPress={closeAllSwipes}
+                                style={styles.emptyContainer}
+                            >
+                                <Text style={styles.emptyText}>请先登录以查看联系人</Text>
+                            </TouchableOpacity>
+                        ) : friends.length === 0 ? (
+                            <TouchableOpacity
+                                activeOpacity={1}
+                                onPress={closeAllSwipes}
+                                style={styles.emptyContainer}
+                            >
+                                <Text style={styles.emptyText}>
+                                    {filter === 'all' ? '暂无联系人' : filter === 'online' ? '暂无在线联系人' : '暂无离线联系人'}
+                                </Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <>
+                                {friends.map((friend) => renderContact(friend))}
+                                {/* 当有菜单打开时，在列表底部添加一个透明的点击区域，用于关闭菜单 */}
+                                {openSwipeId && (
+                                    <TouchableOpacity
+                                        activeOpacity={1}
+                                        onPress={closeAllSwipes}
+                                        style={styles.closeArea}
+                                    />
+                                )}
+                            </>
+                        )}
+                    </ScrollView>
+                </View>
+            </Animated.View>
         </PageContainer>
     );
 }
@@ -368,19 +387,44 @@ const styles = StyleSheet.create({
         marginTop: 8,
         marginBottom: 8,
     },
+    /**
+     * 筛选条阴影容器：
+     * - iOS: shadow*
+     * - Android: elevation（必须配合不透明背景，否则易出现白色条纹/块）
+     */
+    filterShadow: {
+        borderRadius: BORDER_RADIUS.input,
+        backgroundColor: '#fff',
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.32,
+                shadowRadius: 14,
+            },
+            android: {
+                elevation: 10,
+            },
+        }),
+    },
     filterContainer: {
         flexDirection: 'row',
-        backgroundColor: 'rgba(255, 255, 255, 0.5)',
-        borderRadius: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.72)',
+        borderRadius: BORDER_RADIUS.input, // 对齐聊天列表顶部圆角搜索框
+        overflow: 'hidden',
+        height: 42, // 对齐聊天列表顶部圆角搜索框高度
         padding: 4,
+        alignItems: 'center',
     },
     filterItem: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 8,
+        paddingVertical: 0,
         paddingHorizontal: 12,
-        borderRadius: 6,
+        // “滑块”圆角：做成胶囊形
+        borderRadius: 999,
+        height: '100%',
     },
     filterItemActive: {
         backgroundColor: '#2a7bf6',
@@ -1006,7 +1050,7 @@ function SwipeableContactItem({
                             // 延迟执行跳转，确保菜单关闭动画完成后再跳转
                             setTimeout(() => {
                                 if (isMountedRef.current) {
-                                    onPress(friend);
+                                    onPress(friend, e);
                                 }
                             }, 300);
                         } else if (hasAnyMenuOpen) {
@@ -1014,12 +1058,12 @@ function SwipeableContactItem({
                             onAnyContactPress();
                             setTimeout(() => {
                                 if (isMountedRef.current) {
-                                    onPress(friend);
+                                    onPress(friend, e);
                                 }
                             }, 300);
                         } else {
                             // 没有菜单打开，正常跳转
-                            onPress(friend);
+                            onPress(friend, e);
                         }
                     }}
                     style={styles.contactItem}

@@ -203,3 +203,6 @@ temp/
 android/Android-Image-Cropper/build/
 android/Android-Image-Cropper/*/build/
 android/Android-Image-Cropper/.gradle/
+
+# Ignore the whole submodule folder if you don't want it tracked locally
+android/Android-Image-Cropper/

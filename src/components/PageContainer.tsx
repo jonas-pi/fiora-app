@@ -1,6 +1,6 @@
 import { View } from 'native-base';
 import React from 'react';
-import { ImageBackground, SafeAreaView, StyleSheet } from 'react-native';
+import { ImageBackground, SafeAreaView, StyleSheet, Platform } from 'react-native';
 
 type Props = {
     children: any;
@@ -12,7 +12,8 @@ function PageContainer({ children, disableSafeAreaView = false }: Props) {
         <ImageBackground
             source={require('../assets/images/background-cool.jpg')}
             style={styles.backgroundImage}
-            blurRadius={10}
+            // Android 上 blur 对转场/滑动非常吃性能，容易导致动画卡顿
+            blurRadius={Platform.OS === 'ios' ? 10 : 0}
         >
             <View style={styles.children}>
                 {disableSafeAreaView ? (
@@ -34,9 +35,12 @@ const styles = StyleSheet.create({
     backgroundImage: {
         flex: 1,
         resizeMode: 'cover',
+        // 转场/冷启动时先给一个纯色兜底，避免白色闪屏
+        backgroundColor: '#f1f1f1',
     },
     children: {
         flex: 1,
-        backgroundColor: 'rgba(241, 241, 241, 0.6)',
+        // 避免半透明导致转场时露出白底（常见“白闪”）
+        backgroundColor: '#f1f1f1',
     },
 });

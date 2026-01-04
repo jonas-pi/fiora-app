@@ -227,13 +227,16 @@ export default function Linkman({
         return Time.getYearMonthDate(time);
     }
 
-    function handlePress() {
+    function handlePress(event?: any) {
+        const originX = event?.nativeEvent?.pageX;
+        const originY = event?.nativeEvent?.pageY;
+
         if (isOpen) {
             closeSwipeMenu();
             setTimeout(() => {
                 if (isMountedRef.current) {
                     action.setFocus(id);
-                    Actions.chat({ title: formatLinkmanName(linkman) });
+                    Actions.push('chat', { title: formatLinkmanName(linkman), originX, originY });
                     if (id && lastMessageId) {
                         fetch('updateHistory', { linkmanId: id, messageId: lastMessageId });
                     }
@@ -244,7 +247,7 @@ export default function Linkman({
             setTimeout(() => {
                 if (isMountedRef.current) {
                     action.setFocus(id);
-                    Actions.chat({ title: formatLinkmanName(linkman) });
+                    Actions.push('chat', { title: formatLinkmanName(linkman), originX, originY });
                     if (id && lastMessageId) {
                         fetch('updateHistory', { linkmanId: id, messageId: lastMessageId });
                     }
@@ -252,7 +255,7 @@ export default function Linkman({
             }, 300);
         } else {
             action.setFocus(id);
-            Actions.chat({ title: formatLinkmanName(linkman) });
+            Actions.push('chat', { title: formatLinkmanName(linkman), originX, originY });
             if (id && lastMessageId) {
                 fetch('updateHistory', { linkmanId: id, messageId: lastMessageId });
             }
@@ -339,7 +342,7 @@ export default function Linkman({
                     onPress={(e) => {
                         // 阻止事件冒泡，防止触发覆盖层的 closeAllSwipes
                         e.stopPropagation();
-                        handlePress();
+                        handlePress(e);
                     }}
                     style={styles.container}
                     activeOpacity={0.7}

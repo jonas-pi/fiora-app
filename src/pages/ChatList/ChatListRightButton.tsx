@@ -1,20 +1,44 @@
 import { View, Icon, Text } from 'native-base';
-import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, Platform, Modal, TextInput } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+    StyleSheet,
+    TouchableOpacity,
+    Platform,
+    Modal,
+    TextInput,
+    Animated,
+    Easing,
+    Dimensions,
+    ScrollView,
+    Vibration,
+} from 'react-native';
 import { Actions } from 'react-native-router-flux';
-import { createGroup } from '../../service';
+import { createGroup, search } from '../../service';
 import action from '../../state/action';
 import { BORDER_RADIUS } from '../../utils/styles';
+import Avatar from '../../components/Avatar';
 
 // 使用自定义 Modal 替代 Dialog，完全控制样式
 function ChatListRightButton() {
-    const [showDialog, toggleDialog] = useState(false);
+    const [showQuickMenu, setShowQuickMenu] = useState(false); // “添加好友/创建群组”二级菜单
+    const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false); // 复用原来的创建群组卡片
+    const [showAddFriendDialog, setShowAddFriendDialog] = useState(false); // 添加好友卡片
     const [groupName, updateGroupName] = useState('');
     const [isGroupNameFocused, setIsGroupNameFocused] = useState(false);
+    const [friendKeywords, setFriendKeywords] = useState('');
+    const [isFriendKeywordsFocused, setIsFriendKeywordsFocused] = useState(false);
+    const [friendSearchResult, setFriendSearchResult] = useState<{ users: any[]; groups: any[] }>({
+        users: [],
+        groups: [],
+    });
+    const rotate = useRef(new Animated.Value(0)).current;
+    const lastPressOriginRef = useRef<{ originX?: number; originY?: number }>({});
 
-    function handleCloseDialog() {
+    const windowWidth = useMemo(() => Dimensions.get('window').width, []);
+
+    function handleCloseCreateGroupDialog() {
         updateGroupName('');
-        toggleDialog(false);
+        setShowCreateGroupDialog(false);
     }
 
     async function handleCreateGroup() {
@@ -27,29 +51,225 @@ function ChatListRightButton() {
                 messages: [],
             });
             action.setFocus(group._id);
-            handleCloseDialog();
-            Actions.push('chat', { title: group.name });
+            handleCloseCreateGroupDialog();
+            Actions.push('chat', {
+                title: group.name,
+                originX: lastPressOriginRef.current.originX,
+                originY: lastPressOriginRef.current.originY,
+            });
         }
+    }
+
+    function handleCloseAddFriendDialog() {
+        setFriendKeywords('');
+        setFriendSearchResult({ users: [], groups: [] });
+        setShowAddFriendDialog(false);
+    }
+
+    async function handleSearchFriend() {
+        const keywords = friendKeywords.trim();
+        if (!keywords) {
+            setFriendSearchResult({ users: [], groups: [] });
+            return;
+        }
+        const result = await search(keywords);
+        setFriendSearchResult(result || { users: [], groups: [] });
+    }
+
+    function playRotateFeedback() {
+        rotate.stopAnimation();
+        rotate.setValue(0);
+        Animated.sequence([
+            Animated.timing(rotate, {
+                toValue: 1,
+                duration: 160,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+            }),
+            Animated.timing(rotate, {
+                toValue: 0,
+                duration: 140,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+            }),
+        ]).start();
     }
 
     return (
         <>
-            <TouchableOpacity onPress={() => toggleDialog(true)}>
+            <TouchableOpacity
+                onPress={(e) => {
+                    lastPressOriginRef.current = {
+                        originX: e?.nativeEvent?.pageX,
+                        originY: e?.nativeEvent?.pageY,
+                    };
+                    playRotateFeedback();
+                    // 轻震动反馈：与筛选条保持一致
+                    Vibration.vibrate(8);
+                    setShowQuickMenu(true);
+                }}
+            >
                 <View style={styles.container}>
-                    <Icon name="add-outline" style={styles.icon} />
+                    <Animated.View
+                        style={{
+                            transform: [
+                                {
+                                    rotate: rotate.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: ['0deg', '90deg'],
+                                    }),
+                                },
+                            ],
+                        }}
+                    >
+                        <Icon name="add-outline" style={styles.icon} />
+                    </Animated.View>
                 </View>
             </TouchableOpacity>
-            {/* 使用完全自定义的 Modal 替代 Dialog，以完全控制样式 */}
+
+            {/* 1) 右上角“就地弹出”的二级菜单 */}
             <Modal
-                visible={showDialog}
+                visible={showQuickMenu}
                 transparent
                 animationType="fade"
-                onRequestClose={handleCloseDialog}
+                onRequestClose={() => setShowQuickMenu(false)}
+            >
+                <TouchableOpacity
+                    style={styles.quickMenuOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowQuickMenu(false)}
+                >
+                    <TouchableOpacity
+                        activeOpacity={1}
+                        onPress={(evt) => evt.stopPropagation()}
+                        style={[
+                            styles.quickMenuPanel,
+                            (() => {
+                                const originX = lastPressOriginRef.current.originX ?? windowWidth - 20;
+                                const originY = lastPressOriginRef.current.originY ?? 60;
+                                const panelWidth = 160;
+                                const left = Math.max(12, Math.min(windowWidth - panelWidth - 12, originX - panelWidth + 10));
+                                const top = originY + 10;
+                                return { left, top, width: panelWidth };
+                            })(),
+                        ]}
+                    >
+                        <TouchableOpacity
+                            style={styles.quickMenuItem}
+                            activeOpacity={0.75}
+                            onPress={() => {
+                                setShowQuickMenu(false);
+                                setShowAddFriendDialog(true);
+                            }}
+                        >
+                            <Text style={styles.quickMenuText}>添加好友</Text>
+                        </TouchableOpacity>
+                        <View style={styles.quickMenuDivider} />
+                        <TouchableOpacity
+                            style={styles.quickMenuItem}
+                            activeOpacity={0.75}
+                            onPress={() => {
+                                setShowQuickMenu(false);
+                                setShowCreateGroupDialog(true);
+                            }}
+                        >
+                            <Text style={styles.quickMenuText}>创建群组</Text>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* 2) 添加好友卡片：支持昵称搜索用户 */}
+            <Modal
+                visible={showAddFriendDialog}
+                transparent
+                animationType="fade"
+                onRequestClose={handleCloseAddFriendDialog}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={handleCloseAddFriendDialog}
+                >
+                    <TouchableOpacity
+                        style={styles.modalContent}
+                        activeOpacity={1}
+                        onPress={(e) => e.stopPropagation()}
+                    >
+                        <Text style={styles.dialogTitle}>添加好友</Text>
+                        <Text style={styles.dialogDescription}>根据昵称搜索用户</Text>
+                        <View style={styles.searchRow}>
+                            <TextInput
+                                value={friendKeywords}
+                                onChangeText={setFriendKeywords}
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                style={[styles.dialogInput, styles.searchInput]}
+                                placeholder={isFriendKeywordsFocused ? '' : '输入昵称关键字'}
+                                placeholderTextColor="rgba(0, 0, 0, 0.3)"
+                                onFocus={() => setIsFriendKeywordsFocused(true)}
+                                onBlur={() => setIsFriendKeywordsFocused(false)}
+                                returnKeyType="search"
+                                onSubmitEditing={handleSearchFriend}
+                            />
+                            <TouchableOpacity
+                                onPress={handleSearchFriend}
+                                style={styles.searchButton}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={styles.searchButtonText}>搜索</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView style={styles.searchResultList}>
+                            {(friendSearchResult.users || []).map((user) => (
+                                <TouchableOpacity
+                                    key={user._id}
+                                    style={styles.userRow}
+                                    activeOpacity={0.8}
+                                    onPress={() => {
+                                        // 复用现有用户详情页（里面已有“添加好友”逻辑）
+                                        handleCloseAddFriendDialog();
+                                        Actions.push('userInfo', {
+                                            user,
+                                            originX: lastPressOriginRef.current.originX,
+                                            originY: lastPressOriginRef.current.originY,
+                                        });
+                                    }}
+                                >
+                                    <Avatar src={user.avatar} size={36} />
+                                    <Text style={styles.userName}>{user.username}</Text>
+                                </TouchableOpacity>
+                            ))}
+                            {(friendSearchResult.users || []).length === 0 && friendKeywords.trim() ? (
+                                <Text style={styles.emptyHint}>未找到用户</Text>
+                            ) : null}
+                        </ScrollView>
+
+                        <View style={styles.buttonContainer}>
+                            <TouchableOpacity
+                                onPress={handleCloseAddFriendDialog}
+                                style={styles.cancelButton}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={styles.cancelButtonText}>关闭</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* 3) 创建群组卡片：沿用原来的实现（只是不再由“加号”直接打开） */}
+            <Modal
+                visible={showCreateGroupDialog}
+                transparent
+                animationType="fade"
+                onRequestClose={handleCloseCreateGroupDialog}
             >
                 <TouchableOpacity 
                     style={styles.modalOverlay}
                     activeOpacity={1}
-                    onPress={handleCloseDialog}
+                    onPress={handleCloseCreateGroupDialog}
                 >
                     <TouchableOpacity 
                         style={styles.modalContent}
@@ -76,7 +296,7 @@ function ChatListRightButton() {
                         {/* 按钮容器 */}
                         <View style={styles.buttonContainer}>
                             <TouchableOpacity 
-                                onPress={handleCloseDialog}
+                                onPress={handleCloseCreateGroupDialog}
                                 style={styles.cancelButton}
                                 activeOpacity={0.7}
                             >
@@ -110,6 +330,44 @@ const styles = StyleSheet.create({
     icon: {
         color: 'white',
         fontSize: 32,
+    },
+    // 二级菜单遮罩层：覆盖全屏，但菜单面板“就地”显示
+    quickMenuOverlay: {
+        flex: 1,
+        backgroundColor: 'transparent',
+    },
+    quickMenuPanel: {
+        position: 'absolute',
+        backgroundColor: '#fff',
+        borderRadius: BORDER_RADIUS.card,
+        overflow: 'hidden',
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: 'rgba(0,0,0,0.10)',
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 10 },
+                shadowOpacity: 0.28,
+                shadowRadius: 16,
+            },
+            android: {
+                elevation: 12,
+            },
+        }),
+    },
+    quickMenuItem: {
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        backgroundColor: '#fff',
+    },
+    quickMenuText: {
+        color: '#222',
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    quickMenuDivider: {
+        height: StyleSheet.hairlineWidth,
+        backgroundColor: 'rgba(0,0,0,0.08)',
     },
     // Modal 遮罩层样式
     modalOverlay: {
@@ -164,6 +422,51 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#000', // 文本颜色
         marginBottom: 20, // 下边距
+    },
+    // “添加好友”搜索行
+    searchRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    searchInput: {
+        flex: 1,
+        marginBottom: 0,
+    },
+    searchButton: {
+        marginLeft: 10,
+        backgroundColor: '#2a7bf6',
+        borderRadius: BORDER_RADIUS.button,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        minHeight: 42,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    searchButtonText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    searchResultList: {
+        marginTop: 14,
+        maxHeight: 260,
+    },
+    userRow: {
+        height: 52,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 4,
+    },
+    userName: {
+        marginLeft: 10,
+        color: '#222',
+        fontSize: 15,
+    },
+    emptyHint: {
+        marginTop: 10,
+        color: '#888',
+        fontSize: 13,
+        textAlign: 'center',
     },
     // 按钮容器样式
     buttonContainer: {

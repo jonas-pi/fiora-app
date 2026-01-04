@@ -1,10 +1,11 @@
 import React from 'react';
-import { Container, Toast } from 'native-base';
+import { Container } from 'native-base';
 import { Actions } from 'react-native-router-flux';
 
 import fetch from '../../utils/fetch';
 import platform from '../../utils/platform';
 import action from '../../state/action';
+import Toast from '../../components/Toast';
 
 import Base from './Base';
 import { setStorageValue } from '../../utils/storage';
@@ -21,10 +22,7 @@ export default function Signup() {
             },
         );
         if (!err) {
-            Toast.show({
-                text: '创建成功',
-                type: 'success',
-            });
+            Toast.success('创建成功');
 
             const user = res;
             action.setUser(user);

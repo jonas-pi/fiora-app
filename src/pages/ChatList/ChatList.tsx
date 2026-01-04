@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ScrollView, StyleSheet, RefreshControl, Pressable, View, TouchableOpacity } from 'react-native';
+import { ScrollView, StyleSheet, RefreshControl, View, TouchableOpacity, Animated, Platform } from 'react-native';
 
 import { Header, Item, Icon, Input } from 'native-base';
 import { Actions } from 'react-native-router-flux';
@@ -12,8 +12,10 @@ import { isiOS } from '../../utils/platform';
 import { BORDER_RADIUS } from '../../utils/styles';
 import fetch from '../../utils/fetch';
 import action from '../../state/action';
+import { useTabSlideIn } from '../../hooks/useTabSlideIn';
 
-export default function ChatList() {
+export default function ChatList({ navigation }: any) {
+    const { tabAnimatedStyle } = useTabSlideIn(navigation, 0);
     const [searchKeywords, updateSearchKeywords] = useState('');
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
@@ -157,60 +159,65 @@ export default function ChatList() {
 
     return (
         <PageContainer>
-            {/* 搜索栏 - 点击时关闭菜单 */}
-            <TouchableOpacity
-                activeOpacity={1}
-                onPress={closeAllSwipes}
-                style={styles.searchWrapper}
-            >
-                <Header searchBar rounded noShadow style={styles.searchContainer}>
-                    <Item style={styles.searchItem}>
-                        <Icon name="ios-search" style={styles.searchIcon} />
-                        <Input
-                            style={styles.searchText}
-                            placeholder={isSearchFocused ? '' : '搜索群组/用户'}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            returnKeyType="search"
-                            value={searchKeywords}
-                            onChangeText={updateSearchKeywords}
-                            onSubmitEditing={handleSearch}
-                            placeholderTextColor="rgba(0, 0, 0, 0.4)"
-                            onFocus={() => {
-                                setIsSearchFocused(true);
-                                closeAllSwipes(); // 聚焦时也关闭菜单
-                            }}
-                            onBlur={() => setIsSearchFocused(false)}
+            <Animated.View style={[{ flex: 1 }, tabAnimatedStyle]}>
+                {/* 搜索栏 - 点击时关闭菜单 */}
+                <TouchableOpacity
+                    activeOpacity={1}
+                    onPress={closeAllSwipes}
+                    style={styles.searchWrapper}
+                >
+                    <Header searchBar rounded noShadow style={styles.searchContainer}>
+                        {/* 外层阴影容器：Android 用实色 + elevation，避免半透明圆角出现白条 */}
+                        <View style={styles.searchShadow}>
+                            <Item style={styles.searchItem}>
+                                <Icon name="ios-search" style={styles.searchIcon} />
+                                <Input
+                                    style={styles.searchText}
+                                    placeholder={isSearchFocused ? '' : '搜索群组/用户'}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    returnKeyType="search"
+                                    value={searchKeywords}
+                                    onChangeText={updateSearchKeywords}
+                                    onSubmitEditing={handleSearch}
+                                    placeholderTextColor="rgba(0, 0, 0, 0.4)"
+                                    onFocus={() => {
+                                        setIsSearchFocused(true);
+                                        closeAllSwipes(); // 聚焦时也关闭菜单
+                                    }}
+                                    onBlur={() => setIsSearchFocused(false)}
+                                />
+                            </Item>
+                        </View>
+                    </Header>
+                </TouchableOpacity>
+                <ScrollView
+                    style={styles.messageList}
+                    onScrollBeginDrag={closeAllSwipes}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={handleRefresh}
+                            // iOS 和 Android 的刷新颜色配置
+                            tintColor="#2a7bf6"
+                            colors={['#2a7bf6']}
+                            // 刷新提示文字（Android）
+                            title="下拉刷新"
+                            titleColor="#2a7bf6"
                         />
-                    </Item>
-                </Header>
-            </TouchableOpacity>
-            <ScrollView
-                style={styles.messageList}
-                onScrollBeginDrag={closeAllSwipes}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={handleRefresh}
-                        // iOS 和 Android 的刷新颜色配置
-                        tintColor="#2a7bf6"
-                        colors={['#2a7bf6']}
-                        // 刷新提示文字（Android）
-                        title="下拉刷新"
-                        titleColor="#2a7bf6"
-                    />
-                }
-            >
-                {linkmans && linkmans.map((linkman) => renderLinkman(linkman))}
-                {/* 当有菜单打开时，在列表底部添加一个透明的点击区域，用于关闭菜单（只会命中空白处，不覆盖条目） */}
-                {openSwipeId && (
-                    <TouchableOpacity
-                        activeOpacity={1}
-                        onPress={closeAllSwipes}
-                        style={styles.closeArea}
-                    />
-                )}
-            </ScrollView>
+                    }
+                >
+                    {linkmans && linkmans.map((linkman) => renderLinkman(linkman))}
+                    {/* 当有菜单打开时，在列表底部添加一个透明的点击区域，用于关闭菜单（只会命中空白处，不覆盖条目） */}
+                    {openSwipeId && (
+                        <TouchableOpacity
+                            activeOpacity={1}
+                            onPress={closeAllSwipes}
+                            style={styles.closeArea}
+                        />
+                    )}
+                </ScrollView>
+            </Animated.View>
         </PageContainer>
     );
 }
@@ -233,8 +240,29 @@ const styles = StyleSheet.create({
         paddingLeft: 12, // 左右对称的内边距
         paddingRight: 12, // 左右对称的内边距
     },
+    /**
+     * 搜索框阴影容器：
+     * - iOS: 使用 shadow*
+     * - Android: 使用 elevation（必须配合不透明背景，否则易出现白色条纹/块）
+     */
+    searchShadow: {
+        flex: 1,
+        borderRadius: BORDER_RADIUS.input,
+        backgroundColor: '#fff',
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.32,
+                shadowRadius: 14,
+            },
+            android: {
+                elevation: 10,
+            },
+        }),
+    },
     searchItem: {
-        backgroundColor: 'rgba(255,255,255,0.5)',
+        backgroundColor: 'rgba(255,255,255,0.72)',
         borderRadius: BORDER_RADIUS.input, // 添加圆角（16px）
         overflow: 'hidden', // 确保圆角生效
         paddingLeft: 12, // 左边内边距（为图标留空间）
@@ -255,5 +283,6 @@ const styles = StyleSheet.create({
         textAlign: 'center', // 文字居中
         paddingLeft: 0, // 去除左边距
         paddingRight: 20, // 右边距补偿图标宽度，使文字视觉居中
+        backgroundColor: 'transparent', // 防止 NativeBase Input 默认白底露出来
     },
 });

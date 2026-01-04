@@ -17,8 +17,10 @@ function SelfInfo() {
 
     const { avatar, username } = user;
 
-    function handlePress() {
-        Actions.push('selfSettings');
+    function handlePress(event: any) {
+        const originX = event?.nativeEvent?.pageX;
+        const originY = event?.nativeEvent?.pageY;
+        Actions.push('selfSettings', { originX, originY });
     }
 
     return (
