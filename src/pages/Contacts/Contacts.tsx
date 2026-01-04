@@ -351,17 +351,6 @@ export default function Contacts() {
                     )}
                 </ScrollView>
             </View>
-            {/* 当有菜单打开时，添加一个覆盖层来处理点击空白区域 - 放在最外层 */}
-            {/* 注意：覆盖层使用 pointerEvents="box-none"，让子元素可以接收触摸事件 */}
-            {openSwipeId && (
-                <Pressable
-                    onPress={closeAllSwipes}
-                    style={styles.overlay}
-                    pointerEvents="box-none"
-                >
-                    <View style={StyleSheet.absoluteFill} pointerEvents="auto" />
-                </Pressable>
-            )}
         </PageContainer>
     );
 }
@@ -722,6 +711,7 @@ function SwipeableContactItem({
     const backgroundColorOpacity = useRef(new Animated.Value(0)).current; // 背景色透明度动画值
     const currentOffset = useRef(0);
     const isMountedRef = useRef(true); // 组件挂载状态
+    const isClosingRef = useRef(false); // 防止 closeSwipeMenu 被多次触发导致循环
     const [showRemarkDialog, setShowRemarkDialog] = useState(false);
     const [remarkInput, setRemarkInput] = useState('');
     const [isRemarkInputFocused, setIsRemarkInputFocused] = useState(false);
@@ -738,27 +728,51 @@ function SwipeableContactItem({
             translateX.removeListener(listenerId);
         };
     }, []);
+
+    // 左滑操作区宽度（与按钮容器宽度保持一致）
+    const SWIPE_WIDTH = 240;
+
+    /**
+     * 统一收尾逻辑：用 stopAnimation 获取真实位置，避免“松手后只露出部分按钮”的 BUG
+     * 同时使用 timing + cubic easing，让动画更顺滑，避免弹簧二段感
+     */
+    function finalizeSwipe(vx: number) {
+        // 更容易触发“完全滑出”
+        const swipeThreshold = -SWIPE_WIDTH * 0.3;
+        const velocityThreshold = -0.5;
+
+        translateX.stopAnimation((currentValue: number) => {
+            const shouldOpen = currentValue < swipeThreshold || vx < velocityThreshold;
+            const toValue = shouldOpen ? -SWIPE_WIDTH : 0;
+
+            currentOffset.current = toValue;
+            if (shouldOpen) {
+                onSwipeOpen();
+            }
+
+            // 用“带初速度的无回弹弹簧”承接松手瞬间速度，避免“两段式”速度突变
+            Animated.spring(translateX, {
+                toValue,
+                useNativeDriver: true,
+                velocity: vx,
+                overshootClamping: true,
+                tension: 80,
+                friction: 12,
+                restDisplacementThreshold: 0.5,
+                restSpeedThreshold: 0.5,
+            }).start(() => {
+                if (!shouldOpen && isMountedRef.current) {
+                    onSwipeClose();
+                }
+            });
+        });
+    }
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => {
-                // 在手指刚触碰到时，如果其他菜单已打开，立即关闭它们
-                if (hasAnyMenuOpen && !isOpen && openSwipeId) {
-                    // 直接调用关闭函数，立即启动关闭动画
-                    const closeFn = closeSwipeRefs.current[openSwipeId];
-                    if (closeFn) {
-                        closeFn();
-                    }
-                }
                 return false;
             },
             onStartShouldSetPanResponderCapture: () => {
-                // 在捕获阶段也检查，确保能立即关闭其他菜单
-                if (hasAnyMenuOpen && !isOpen && openSwipeId) {
-                    const closeFn = closeSwipeRefs.current[openSwipeId];
-                    if (closeFn) {
-                        closeFn();
-                    }
-                }
                 return false;
             },
             onMoveShouldSetPanResponder: (_, gestureState) => {
@@ -769,7 +783,7 @@ function SwipeableContactItem({
                 // 只响应水平滑动，进一步降低阈值以确保能捕获所有滑动
                 // 只要水平滑动距离大于垂直滑动距离，就响应（降低到 3px）
                 // 注意：即使其他菜单已打开，也要响应滑动，以便关闭其他菜单并打开当前菜单
-                return Math.abs(gestureState.dx) > 3 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+                return Math.abs(gestureState.dx) > 1 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
             },
             onMoveShouldSetPanResponderCapture: (_, gestureState) => {
                 // 在捕获阶段也检查，确保能捕获到手势
@@ -778,7 +792,7 @@ function SwipeableContactItem({
                     return false;
                 }
                 // 即使其他菜单已打开，也要响应滑动
-                return Math.abs(gestureState.dx) > 3 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+                return Math.abs(gestureState.dx) > 1 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
             },
             onPanResponderGrant: () => {
                 // 如果其他菜单已打开，立即关闭它们（但不中断当前手势）
@@ -789,312 +803,48 @@ function SwipeableContactItem({
                         closeFn();
                     }
                 }
-                // 开始滑动时，使用当前偏移量
-                translateX.setOffset(currentOffset.current);
-                translateX.setValue(0);
+                // 直接以当前偏移开始拖拽（不使用 setOffset/flattenOffset，避免快滑“二段式”）
+                translateX.stopAnimation();
+                backgroundColorOpacity.stopAnimation();
+                translateX.setValue(currentOffset.current);
             },
             onPanResponderMove: (_, gestureState) => {
                 // 只允许向左滑动（负值），且不超过操作按钮宽度
-                const newValue = Math.max(-240, Math.min(0, gestureState.dx));
+                const newValue = Math.max(-SWIPE_WIDTH, Math.min(0, currentOffset.current + gestureState.dx));
                 translateX.setValue(newValue);
-                // 同步更新背景色透明度：translateX 从 -240 到 0，映射到透明度从 0.8 到 0
-                const opacity = Math.max(0, Math.min(0.8, Math.abs(newValue) / 240 * 0.8));
-                backgroundColorOpacity.setValue(opacity);
             },
             onPanResponderTerminate: (_, gestureState) => {
-                // 手势被中断时，也要执行释放逻辑
-                // 在 flattenOffset 之前获取当前值
-                const finalValue = currentOffset.current + gestureState.dx;
-                translateX.flattenOffset();
-                
-                const swipeThreshold = -120;
-                const minSwipeDistance = 5; // 最小滑动距离，小于此值直接收回
-                const velocityThreshold = -0.5;
-                
-                if (Math.abs(gestureState.dx) < minSwipeDistance) {
-                    currentOffset.current = 0;
-                    Animated.parallel([
-                        Animated.spring(translateX, {
-                            toValue: 0,
-                            useNativeDriver: true,
-                            tension: 40, // 降低 tension，让动画更平滑
-                            friction: 8, // 增加 friction，减少弹跳效果
-                            velocity: 0, // 初始速度为0，避免突然启动
-                        }),
-                        Animated.spring(backgroundColorOpacity, {
-                            toValue: 0,
-                            useNativeDriver: false,
-                            tension: 40,
-                            friction: 8,
-                            velocity: 0,
-                        }),
-                    ]).start(() => {
-                        if (isMountedRef.current) {
-                            onSwipeClose();
-                        }
-                    });
-                } else if (finalValue < swipeThreshold || gestureState.vx < velocityThreshold) {
-                    currentOffset.current = -240;
-                    Animated.parallel([
-                        Animated.spring(translateX, {
-                            toValue: -240,
-                            useNativeDriver: true,
-                            tension: 40, // 降低 tension，让动画更平滑
-                            friction: 8, // 增加 friction，减少弹跳效果
-                            velocity: 0, // 初始速度为0，避免突然启动
-                        }),
-                        Animated.spring(backgroundColorOpacity, {
-                            toValue: 0.8,
-                            useNativeDriver: false,
-                            tension: 40, // 降低 tension，让动画更平滑
-                            friction: 8, // 增加 friction，减少弹跳效果
-                            velocity: 0, // 初始速度为0，避免突然启动
-                        }),
-                    ]).start(() => {
-                        if (isMountedRef.current) {
-                            onSwipeOpen();
-                        }
-                    });
-                } else {
-                    currentOffset.current = 0;
-                    Animated.parallel([
-                        Animated.spring(translateX, {
-                            toValue: 0,
-                            useNativeDriver: true,
-                            tension: 40, // 降低 tension，让动画更平滑
-                            friction: 8, // 增加 friction，减少弹跳效果
-                            velocity: 0, // 初始速度为0，避免突然启动
-                        }),
-                        Animated.spring(backgroundColorOpacity, {
-                            toValue: 0,
-                            useNativeDriver: false,
-                            tension: 40,
-                            friction: 8,
-                            velocity: 0,
-                        }),
-                    ]).start(() => {
-                        if (isMountedRef.current) {
-                            onSwipeClose();
-                        }
-                    });
-                }
+                // 手势被中断也走同一套收尾逻辑（更稳）
+                finalizeSwipe(gestureState?.vx ?? 0);
             },
             onPanResponderRelease: (_, gestureState) => {
-                // 在 flattenOffset 之前获取当前值
-                // 由于我们在 onPanResponderGrant 中设置了 offset，当前值 = offset + gestureState.dx
-                const finalValue = currentOffset.current + gestureState.dx;
-                
-                const swipeThreshold = -120; // 滑动距离阈值（滑动超过一半，即 -240 的一半）
-                const minSwipeDistance = 5; // 最小滑动距离，小于此值直接收回（使用绝对值，降低阈值以识别更小的滑动）
-                const velocityThreshold = -0.5; // 滑动速度阈值（负值表示向左滑动）
-                
-                // 先 flattenOffset，确保值正确
-                translateX.flattenOffset();
-                
-                // 如果滑动距离很小（无论向左还是向右），直接收回
-                if (Math.abs(gestureState.dx) < minSwipeDistance) {
-                    currentOffset.current = 0;
-                    // 停止所有正在进行的动画
-                    translateX.stopAnimation();
-                    backgroundColorOpacity.stopAnimation();
-                    // 立即执行收回动画
-                    Animated.parallel([
-                        Animated.spring(translateX, {
-                            toValue: 0,
-                            useNativeDriver: true,
-                            tension: 40, // 降低 tension，让动画更平滑
-                            friction: 8, // 增加 friction，减少弹跳效果
-                            velocity: 0, // 初始速度为0，避免突然启动
-                        }),
-                        Animated.spring(backgroundColorOpacity, {
-                            toValue: 0,
-                            useNativeDriver: false,
-                            tension: 40,
-                            friction: 8,
-                            velocity: 0,
-                        }),
-                    ]).start((finished) => {
-                        if (finished && isMountedRef.current) {
-                            translateX.setValue(0);
-                            backgroundColorOpacity.setValue(0);
-                        }
-                        if (isMountedRef.current) {
-                            onSwipeClose();
-                        }
-                    });
-                    return;
-                }
-                
-                // 考虑滑动速度和距离，判断是展开还是关闭
-                // 如果滑动速度很快（向左），或者滑动距离超过阈值，展开
-                const shouldOpen = finalValue < swipeThreshold || gestureState.vx < velocityThreshold;
-                
-                if (shouldOpen) {
-                    // 滑动超过阈值或速度很快，完成滑动，显示操作按钮
-                    currentOffset.current = -240;
-                    // 停止所有正在进行的动画
-                    translateX.stopAnimation();
-                    backgroundColorOpacity.stopAnimation();
-                    // 立即执行展开动画
-                    Animated.parallel([
-                        Animated.spring(translateX, {
-                            toValue: -240, // 操作按钮区域宽度
-                            useNativeDriver: true,
-                            tension: 40, // 降低 tension，让动画更平滑
-                            friction: 8, // 增加 friction，减少弹跳效果
-                            velocity: 0, // 初始速度为0，避免突然启动
-                        }),
-                        Animated.spring(backgroundColorOpacity, {
-                            toValue: 0.8, // 背景色透明度
-                            useNativeDriver: false, // backgroundColor 不支持原生驱动
-                            tension: 40,
-                            friction: 8,
-                            velocity: 0,
-                        }),
-                    ]).start((finished) => {
-                        if (finished && isMountedRef.current) {
-                            translateX.setValue(-240);
-                            backgroundColorOpacity.setValue(0.8);
-                        }
-                        if (isMountedRef.current) {
-                            onSwipeOpen();
-                        }
-                    });
-                } else {
-                    // 滑动未超过阈值且速度不够，恢复原状
-                    currentOffset.current = 0;
-                    // 停止所有正在进行的动画
-                    translateX.stopAnimation();
-                    backgroundColorOpacity.stopAnimation();
-                    // 立即执行收回动画
-                    Animated.parallel([
-                        Animated.spring(translateX, {
-                            toValue: 0,
-                            useNativeDriver: true,
-                            tension: 40, // 降低 tension，让动画更平滑
-                            friction: 8, // 增加 friction，减少弹跳效果
-                            velocity: 0, // 初始速度为0，避免突然启动
-                        }),
-                        Animated.spring(backgroundColorOpacity, {
-                            toValue: 0,
-                            useNativeDriver: false, // backgroundColor 不支持原生驱动
-                            tension: 40, // 降低 tension，让动画更平滑
-                            friction: 8, // 增加 friction，减少弹跳效果
-                            velocity: 0, // 初始速度为0，避免突然启动
-                        }),
-                    ]).start((finished) => {
-                        if (finished && isMountedRef.current) {
-                            translateX.setValue(0);
-                            backgroundColorOpacity.setValue(0);
-                        }
-                        if (isMountedRef.current) {
-                            onSwipeClose();
-                        }
-                    });
-                }
+                finalizeSwipe(gestureState?.vx ?? 0);
             },
         }),
     ).current;
 
     // 关闭滑动菜单
     function closeSwipeMenu() {
-        // 如果菜单已经完全打开，直接收回
-        if (currentOffset.current === -240) {
+        // 重要：closeSwipeMenu 是“外部要求关闭”的语义（例如滑第二条时关闭第一条），必须强制收回
+        if (isClosingRef.current) {
+            return;
+        }
+        isClosingRef.current = true;
+
+        translateX.stopAnimation(() => {
             currentOffset.current = 0;
-            translateX.flattenOffset();
-            Animated.parallel([
-                Animated.spring(translateX, {
-                    toValue: 0,
-                    useNativeDriver: true,
-                    tension: 40,
-                    friction: 8,
-                    velocity: 0,
-                }),
-                Animated.spring(backgroundColorOpacity, {
-                    toValue: 0,
-                    useNativeDriver: false,
-                    tension: 40,
-                    friction: 8,
-                    velocity: 0,
-                }),
-            ]).start((finished) => {
-                if (finished && isMountedRef.current) {
-                    translateX.setValue(0);
-                    backgroundColorOpacity.setValue(0);
-                }
+            Animated.timing(translateX, {
+                toValue: 0,
+                duration: 160,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+            }).start(() => {
+                isClosingRef.current = false;
                 if (isMountedRef.current) {
                     onSwipeClose();
                 }
             });
-            return;
-        }
-        
-        // 停止所有正在进行的动画，并获取当前值
-        translateX.stopAnimation((currentValue) => {
-            // 确保 offset 被 flatten
-            translateX.flattenOffset();
-            
-            // 获取实际的当前值（考虑 offset）
-            // 如果 currentValue 是 null 或 undefined，使用 currentOffset
-            const actualValue = currentOffset.current + (currentValue || 0);
-            const swipeThreshold = -120; // 滑动阈值（滑动超过一半，即 -240 的一半）
-            
-            // 根据当前滑动位置判断是展开还是收回
-            if (actualValue < swipeThreshold && actualValue > -240) {
-                // 如果已经滑动超过阈值但未完全打开，继续展开到完全打开
-                currentOffset.current = -240;
-                Animated.parallel([
-                    Animated.spring(translateX, {
-                        toValue: -240,
-                        useNativeDriver: true,
-                        tension: 40,
-                        friction: 8,
-                        velocity: 0,
-                    }),
-                    Animated.spring(backgroundColorOpacity, {
-                        toValue: 0.8,
-                        useNativeDriver: false,
-                        tension: 40,
-                        friction: 8,
-                        velocity: 0,
-                    }),
-                ]).start(() => {
-                    if (isMountedRef.current) {
-                        onSwipeOpen();
-                    }
-                });
-            } else {
-                // 如果未超过阈值或已经超过完全打开的位置，收回
-                currentOffset.current = 0;
-                Animated.parallel([
-                    Animated.spring(translateX, {
-                        toValue: 0,
-                        useNativeDriver: true,
-                        tension: 40,
-                        friction: 8,
-                        velocity: 0,
-                    }),
-                    Animated.spring(backgroundColorOpacity, {
-                        toValue: 0,
-                        useNativeDriver: false,
-                        tension: 40,
-                        friction: 8,
-                        velocity: 0,
-                    }),
-                ]).start((finished) => {
-                    if (finished && isMountedRef.current) {
-                        translateX.setValue(0);
-                        backgroundColorOpacity.setValue(0);
-                    }
-                    if (isMountedRef.current) {
-                        onSwipeClose();
-                    }
-                });
-            }
         });
-        
-        // 同时停止背景色透明度动画
-        backgroundColorOpacity.stopAnimation();
     }
 
     // 注册关闭函数，供父组件调用

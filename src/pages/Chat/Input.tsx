@@ -36,9 +36,19 @@ type Props = {
     onHeightChange: () => void;
     onMenuStateChange?: (hasMenuOpen: boolean) => void; // 通知父组件菜单状态变化
     closeAllMenusRef?: React.MutableRefObject<(() => void) | undefined>; // 父组件通过 ref 获取关闭函数
+    draftApiRef?: React.MutableRefObject<InputDraftApi | undefined>; // 父组件通过 ref 获取/设置输入框草稿
 };
 
-export default function Input({ onHeightChange, onMenuStateChange, closeAllMenusRef }: Props) {
+export type InputDraftApi = {
+    /** 获取当前输入框草稿文本 */
+    getText: () => string;
+    /** 设置草稿文本（用于撤回后编辑/引用） */
+    setText: (text: string) => void;
+    /** 聚焦输入框 */
+    focus: () => void;
+};
+
+export default function Input({ onHeightChange, onMenuStateChange, closeAllMenusRef, draftApiRef }: Props) {
     const isLogin = useIsLogin();
     const user = useUser();
     const { focus } = useStore();
@@ -54,11 +64,15 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
     const [contentHeight, setContentHeight] = useState(0); // 内容实际高度，用于判断是否需要滚动
 
     const $input = useRef<TextInput>();
+    // 保存最新 message，供 draftApiRef.getText 读取
+    const $messageRef = useRef('');
     // 记录“单行时 contentSize.height 的基准值”，用于兼容不同平台对 contentSize 是否包含 padding 的差异
     const $singleLineContentHeight = useRef<number | null>(null);
     // 部分输入法在按一次“换行/回车”时会触发两次换行（产生 \n\n）
     // 这里用 onKeyPress 做标记，在 onChangeText 中做一次性“去重”
     const $pendingSingleEnter = useRef(false);
+    // 防止“发送按钮”短时间内触发多次（某些机型/触摸事件可能触发重复点击）
+    const $sendingLock = useRef(false);
 
     // 监听键盘显示/隐藏事件，自动调整消息位置
     useEffect(() => {
@@ -87,6 +101,11 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
         };
     }, [onHeightChange]);
 
+    // 同步 message 到 ref，避免外部读取到旧值
+    useEffect(() => {
+        $messageRef.current = message;
+    }, [message]);
+
     function setInputText(text = '') {
         // iossetNativeProps无效, 解决办法参考:https://github.com/facebook/react-native/issues/18272
         if (isiOS) {
@@ -96,6 +115,40 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
             $input.current!.setNativeProps({ text: text || '' });
         });
     }
+
+    // 暴露给父组件：读取/写入草稿、聚焦
+    useEffect(() => {
+        if (!draftApiRef) {
+            return;
+        }
+
+        draftApiRef.current = {
+            getText: () => $messageRef.current,
+            setText: (text: string) => {
+                // 先更新 state，再同步到原生输入框（尤其是 iOS 的 setNativeProps workaround）
+                setMessage(text);
+                setInputText(text);
+                // 光标移动到末尾
+                const end = text.length;
+                setCursorPosition({ start: end, end });
+                // 高度变化后滚动到底部
+                setTimeout(() => {
+                    onHeightChange();
+                }, 50);
+            },
+            focus: () => {
+                setTimeout(() => {
+                    $input.current?.focus();
+                }, 0);
+            },
+        };
+
+        return () => {
+            if (draftApiRef) {
+                draftApiRef.current = undefined;
+            }
+        };
+    }, [draftApiRef, onHeightChange]);
 
     /**
      * 构建一条“本地发送中”的消息对象（用于先插入列表，再走发送/上传流程）
@@ -141,16 +194,32 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
         }
     }
 
-    function handleSubmit() {
-        if (message === '') {
+    async function handleSubmit() {
+        // 只要还有可见字符就允许发送（保留换行/空格等格式），但全空白不发
+        if (!message || message.trim() === '') {
             return;
         }
+        // 防重复发送
+        if ($sendingLock.current) {
+            return;
+        }
+        $sendingLock.current = true;
 
-        const id = addSelfMessage('text', message);
-        sendMessage(id, 'text', message);
+        const content = message; // 先捕获内容，避免清空后丢失
+        const id = addSelfMessage('text', content);
 
+        // 立即清空输入框（体验更好）
         setMessage('');
         setInputText();
+
+        try {
+            await sendMessage(id, 'text', content);
+        } finally {
+            // 给一点点缓冲，避免极快连点导致再次触发
+            setTimeout(() => {
+                $sendingLock.current = false;
+            }, 300);
+        }
     }
 
     function handleSelectionChange(event: any) {
@@ -424,13 +493,14 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
             0,
             cursorPosition.start,
         )}${expression}${message.substring(cursorPosition.end, message.length)}`;
+        // 更新草稿
         setMessage(newValue);
+        // 同步到原生输入框（尤其 iOS）
+        setInputText(newValue);
         setCursorPosition({
             start: cursorPosition.start + expression.length,
             end: cursorPosition.start + expression.length,
         });
-        // 设置消息，onContentSizeChange 会自动触发高度调整
-        setMessage(newValue);
     }
 
     // 处理语音按钮点击（待实现）
@@ -696,11 +766,8 @@ export default function Input({ onHeightChange, onMenuStateChange, closeAllMenus
                                             onPress={(event) => {
                                                 event.stopPropagation();
                                                 insertExpression(e);
-                                                setShowExpressionMenu(false);
-                                                // 关闭菜单后通知父组件调整消息位置
-                                                setTimeout(() => {
-                                                    onHeightChange();
-                                                }, 100);
+                                                // 按产品要求：选择表情后不要自动收起菜单
+                                                // 用户可能连续选择多个表情
                                             }}
                                             style={styles.expressionPreviewItem}
                                         >

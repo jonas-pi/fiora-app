@@ -14,6 +14,10 @@ import { referer } from '../../utils/constant';
 
 type Props = {
     $scrollView: React.MutableRefObject<ScrollView>;
+    /** 双击自己的消息撤回后，回填输入框草稿 */
+    onEditDraft: (text: string) => void;
+    /** 双击他人消息，插入引用到输入框草稿 */
+    onQuoteDraft: (quoteText: string) => void;
 };
 
 let prevContentHeight = 0;
@@ -21,7 +25,7 @@ let prevMessageCount = 0;
 let shouldScroll = true;
 let isFirstTimeFetchHistory = true;
 
-function MessageList({ $scrollView }: Props) {
+function MessageList({ $scrollView, onEditDraft, onQuoteDraft }: Props) {
     const isLogin = useIsLogin();
     const self = useSelfId();
     const focusLinkman = useFocusLinkman();
@@ -179,6 +183,8 @@ function MessageList({ $scrollView }: Props) {
                 shouldScroll={shouldScroll}
                 scrollToEnd={scrollToEnd}
                 openImageViewer={openImageViewer}
+                onEditDraft={onEditDraft}
+                onQuoteDraft={onQuoteDraft}
             />
         );
     }

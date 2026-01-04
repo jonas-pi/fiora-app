@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image as BaseImage, ImageSourcePropType } from 'react-native';
+import { Image as BaseImage, ImageSourcePropType, ImageResizeMode } from 'react-native';
 import { getOSSFileUrl } from '../utils/uploadFile';
 import { referer } from '../utils/constant';
 
@@ -8,9 +8,11 @@ type Props = {
     width?: string | number;
     height?: string | number;
     style?: any;
+    /** 透传给 RN Image，用于控制缩放策略（雪碧图裁剪时可减少串图） */
+    resizeMode?: ImageResizeMode;
 };
 
-export default function Image({ src, width = '100%', height = '100%', style }: Props) {
+export default function Image({ src, width = '100%', height = '100%', style, resizeMode }: Props) {
     // @ts-ignore
     let source: ImageSourcePropType = src;
     if (typeof src === 'string') {
@@ -44,5 +46,5 @@ export default function Image({ src, width = '100%', height = '100%', style }: P
             },
         };
     }
-    return <BaseImage source={source} style={[style, { width, height }]} />;
+    return <BaseImage source={source} resizeMode={resizeMode} style={[style, { width, height }]} />;
 }

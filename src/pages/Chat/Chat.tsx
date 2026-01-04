@@ -6,7 +6,7 @@ import { Actions } from 'react-native-router-flux';
 import { isiOS } from '../../utils/platform';
 
 import MessageList from './MessageList';
-import Input from './Input';
+import Input, { InputDraftApi } from './Input';
 import PageContainer from '../../components/PageContainer';
 import { Friend, Group, Linkman } from '../../types/redux';
 import { useFocusLinkman, useIsLogin, useSelfId, useStore } from '../../hooks/useStore';
@@ -60,6 +60,7 @@ export default function Chat() {
     const $messageList = useRef<ScrollView>();
     const [hasMenuOpen, setHasMenuOpen] = useState(false); // 菜单是否打开
     const closeAllMenusRef = useRef<(() => void) | undefined>(); // 关闭菜单的函数引用
+    const inputDraftRef = useRef<InputDraftApi | undefined>(); // 输入框草稿操作
 
     async function fetchGroupOnlineMembers() {
         let onlineMembers: Group['members'] = [];
@@ -130,6 +131,28 @@ export default function Chat() {
         }
     }
 
+    /**
+     * 撤回后编辑：用消息内容回填输入框，并聚焦
+     */
+    function handleEditDraft(text: string) {
+        if (inputDraftRef.current) {
+            inputDraftRef.current.setText(text);
+            inputDraftRef.current.focus();
+        }
+    }
+
+    /**
+     * 引用：将引用内容追加到当前草稿，并聚焦
+     */
+    function handleQuoteDraft(quoteText: string) {
+        if (inputDraftRef.current) {
+            const prev = inputDraftRef.current.getText();
+            const next = prev ? `${prev}\n${quoteText}` : quoteText;
+            inputDraftRef.current.setText(next);
+            inputDraftRef.current.focus();
+        }
+    }
+
     // 处理菜单状态变化
     function handleMenuStateChange(hasMenuOpen: boolean) {
         setHasMenuOpen(hasMenuOpen);
@@ -152,7 +175,11 @@ export default function Chat() {
             >
                 {/* 
                 // @ts-ignore */}
-                <MessageList $scrollView={$messageList} />
+                <MessageList
+                    $scrollView={$messageList}
+                    onEditDraft={handleEditDraft}
+                    onQuoteDraft={handleQuoteDraft}
+                />
                 {/* 当有菜单打开时，添加覆盖层来处理点击聊天记录区域关闭菜单 */}
                 {/* 覆盖层使用 pointerEvents="box-none"，让子元素（Input 和菜单）可以接收触摸事件 */}
                 {hasMenuOpen && (
@@ -168,6 +195,7 @@ export default function Chat() {
                     onHeightChange={handleInputHeightChange}
                     onMenuStateChange={handleMenuStateChange}
                     closeAllMenusRef={closeAllMenusRef}
+                    draftApiRef={inputDraftRef}
                 />
             </KeyboardAvoidingView>
         </PageContainer>

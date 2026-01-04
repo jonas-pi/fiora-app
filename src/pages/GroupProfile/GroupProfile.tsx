@@ -27,13 +27,15 @@ function GroupProfile() {
             const isSuccess = await deleteGroup(linkman._id);
             if (isSuccess) {
                 action.removeLinkman(linkman._id);
-                Actions.popTo('_chatlist', { title: '' });
+                // Tab 场景 key 是 chatlist（不是 _chatlist）
+                Actions.popTo('chatlist', { title: '' });
             }
         } else {
             const isSuccess = await leaveGroup(linkman._id);
             if (isSuccess) {
                 action.removeLinkman(linkman._id);
-                Actions.popTo('_chatlist', { title: '' });
+                // Tab 场景 key 是 chatlist（不是 _chatlist）
+                Actions.popTo('chatlist', { title: '' });
             }
         }
     }

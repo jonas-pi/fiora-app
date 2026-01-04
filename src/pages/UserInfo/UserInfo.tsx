@@ -45,7 +45,7 @@ function UserInfo({ user }: Props) {
         if (currentLinkman._id === friend._id) {
             Actions.pop();
         } else {
-            Actions.popTo('_chatlist');
+            Actions.popTo('chatlist');
             Actions.push('chat', { title: friend.name });
         }
     }
@@ -61,7 +61,7 @@ function UserInfo({ user }: Props) {
         if (isSuccess) {
             action.removeLinkman(friend._id);
             if (currentLinkman._id === friend._id) {
-                Actions.popTo('_chatlist');
+                Actions.popTo('chatlist');
             } else {
                 Actions.pop();
             }
@@ -120,7 +120,7 @@ function UserInfo({ user }: Props) {
             if (currentLinkman._id === friend?._id) {
                 Actions.pop();
             } else {
-                Actions.popTo('_chatlist');
+                Actions.popTo('chatlist');
                 Actions.push('chat', { title: newLinkman.username });
             }
         }

@@ -202,17 +202,15 @@ export default function ChatList() {
                 }
             >
                 {linkmans && linkmans.map((linkman) => renderLinkman(linkman))}
+                {/* 当有菜单打开时，在列表底部添加一个透明的点击区域，用于关闭菜单（只会命中空白处，不覆盖条目） */}
+                {openSwipeId && (
+                    <TouchableOpacity
+                        activeOpacity={1}
+                        onPress={closeAllSwipes}
+                        style={styles.closeArea}
+                    />
+                )}
             </ScrollView>
-            {/* 当有菜单打开时，添加一个覆盖层来处理点击空白区域 */}
-            {openSwipeId && (
-                <Pressable
-                    onPress={closeAllSwipes}
-                    style={styles.overlay}
-                    pointerEvents="box-none"
-                >
-                    <View style={StyleSheet.absoluteFill} pointerEvents="auto" />
-                </Pressable>
-            )}
         </PageContainer>
     );
 }
@@ -222,15 +220,10 @@ const styles = StyleSheet.create({
         // 搜索栏包装器，用于点击关闭菜单
     },
     messageList: {},
-    overlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
+    // 关闭菜单的点击区域（当菜单打开时显示在列表底部）
+    closeArea: {
+        height: 1000, // 足够大的高度，覆盖整个可见空白区域
         backgroundColor: 'transparent',
-        zIndex: 999,
-        elevation: 999,
     },
     searchContainer: {
         marginTop: isiOS ? 0 : 5,

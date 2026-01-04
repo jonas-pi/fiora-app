@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Scene, Router, Stack, Tabs, Lightbox } from 'react-native-router-flux';
 import { Icon, Root } from 'native-base';
+import { enableScreens } from 'react-native-screens';
 
 import { connect } from 'react-redux';
 import ChatList from './pages/ChatList/ChatList';
@@ -30,6 +31,9 @@ type Props = {
     primaryColor: string;
     isLogin: boolean;
 };
+
+// 启用 native screens，可显著改善页面切换/侧滑返回的流畅度
+enableScreens();
 
 function App({ title, primaryColor, isLogin }: Props) {
     const primaryColor10 = `rgba(${primaryColor}, 1)`;

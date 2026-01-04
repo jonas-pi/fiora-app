@@ -7,6 +7,7 @@ import {
     Animated,
     PanResponder,
     Alert,
+    Easing,
 } from 'react-native';
 import { Actions } from 'react-native-router-flux';
 
@@ -59,38 +60,30 @@ export default function Linkman({
     const translateX = useRef(new Animated.Value(0)).current;
     const currentOffset = useRef(0);
     const isMountedRef = useRef(true); // 组件挂载状态
+    // 动画常量：与 Contacts 统一，减少“弹簧二段感”
+    const SWIPE_WIDTH = 240;
+    const isClosingRef = useRef(false);
 
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => {
-                if (hasAnyMenuOpen && !isOpen && openSwipeId) {
-                    const closeFn = closeSwipeRefs.current[openSwipeId];
-                    if (closeFn) {
-                        closeFn();
-                    }
-                }
                 return false;
             },
             onStartShouldSetPanResponderCapture: () => {
-                if (hasAnyMenuOpen && !isOpen && openSwipeId) {
-                    const closeFn = closeSwipeRefs.current[openSwipeId];
-                    if (closeFn) {
-                        closeFn();
-                    }
-                }
                 return false;
             },
             onMoveShouldSetPanResponder: (_, gestureState) => {
-                if (isOpen && Math.abs(gestureState.dx) < 3 && Math.abs(gestureState.dy) < 3) {
+                // 降低阈值，尽早捕获水平手势，避免“先滑出一点再接管”的两段式体验
+                if (isOpen && Math.abs(gestureState.dx) < 1 && Math.abs(gestureState.dy) < 1) {
                     return false;
                 }
-                return Math.abs(gestureState.dx) > 3 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+                return Math.abs(gestureState.dx) > 1 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
             },
             onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-                if (isOpen && Math.abs(gestureState.dx) < 3 && Math.abs(gestureState.dy) < 3) {
+                if (isOpen && Math.abs(gestureState.dx) < 1 && Math.abs(gestureState.dy) < 1) {
                     return false;
                 }
-                return Math.abs(gestureState.dx) > 3 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+                return Math.abs(gestureState.dx) > 1 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
             },
             onPanResponderGrant: () => {
                 if (hasAnyMenuOpen && !isOpen && openSwipeId) {
@@ -99,63 +92,48 @@ export default function Linkman({
                         closeFn();
                     }
                 }
-                translateX.setOffset(currentOffset.current);
-                translateX.setValue(0);
+                // 直接以当前偏移开始拖拽（不使用 setOffset/flattenOffset，避免快滑时“二段式”）
+                translateX.stopAnimation();
+                translateX.setValue(currentOffset.current);
             },
             onPanResponderMove: (_, gestureState) => {
-                const newValue = Math.max(-240, Math.min(0, gestureState.dx));
+                const newValue = Math.max(-SWIPE_WIDTH, Math.min(0, currentOffset.current + gestureState.dx));
                 translateX.setValue(newValue);
             },
             onPanResponderRelease: (_, gestureState) => {
-                const finalValue = currentOffset.current + gestureState.dx;
-                translateX.flattenOffset();
-
-                const swipeThreshold = -120;
-                const minSwipeDistance = 5;
+                // 更容易触发“完全滑出”
+                const swipeThreshold = -SWIPE_WIDTH * 0.3;
                 const velocityThreshold = -0.5;
 
-                if (Math.abs(gestureState.dx) < minSwipeDistance) {
-                    currentOffset.current = 0;
-                    translateX.stopAnimation();
-                    Animated.spring(translateX, {
-                        toValue: 0,
-                        useNativeDriver: true,
-                        tension: 40,
-                        friction: 8,
-                        velocity: 0,
-                    }).start(() => {
-                        onSwipeClose();
-                    });
-                    return;
-                }
+                // 用 stopAnimation 拿到真实位置（比 gestureState.dx 更可靠，避免松手后只露出一部分）
+                translateX.stopAnimation((currentValue: number) => {
+                    const finalValue = currentValue;
+                    const shouldOpen = finalValue < swipeThreshold || gestureState.vx < velocityThreshold;
+                    const toValue = shouldOpen ? -SWIPE_WIDTH : 0;
 
-                const shouldOpen = finalValue < swipeThreshold || gestureState.vx < velocityThreshold;
+                    // 先更新 offset 记录
+                    currentOffset.current = toValue;
 
-                if (shouldOpen) {
-                    // 在动画开始前就调用 onSwipeOpen，确保立即关闭其他菜单
-                    onSwipeOpen();
-                    currentOffset.current = -240;
-                    translateX.stopAnimation();
+                    if (shouldOpen) {
+                        onSwipeOpen();
+                    }
+
+                    // 用“带初速度的无回弹弹簧”承接松手瞬间速度，避免“两段式”速度突变
                     Animated.spring(translateX, {
-                        toValue: -240,
+                        toValue,
                         useNativeDriver: true,
-                        tension: 40,
-                        friction: 8,
-                        velocity: 0,
-                    }).start();
-                } else {
-                    currentOffset.current = 0;
-                    translateX.stopAnimation();
-                    Animated.spring(translateX, {
-                        toValue: 0,
-                        useNativeDriver: true,
-                        tension: 40,
-                        friction: 8,
-                        velocity: 0,
+                        velocity: gestureState.vx,
+                        overshootClamping: true,
+                        tension: 80,
+                        friction: 12,
+                        restDisplacementThreshold: 0.5,
+                        restSpeedThreshold: 0.5,
                     }).start(() => {
-                        onSwipeClose();
+                        if (!shouldOpen) {
+                            onSwipeClose();
+                        }
                     });
-                }
+                });
             },
             onPanResponderTerminate: () => {
                 closeSwipeMenu();
@@ -165,59 +143,25 @@ export default function Linkman({
 
     // 关闭滑动菜单
     function closeSwipeMenu() {
-        if (currentOffset.current === -240) {
+        // closeSwipeMenu 的语义是“强制收回”（例如滑动另一个条目时关闭当前条目）
+        if (isClosingRef.current) {
+            return;
+        }
+        isClosingRef.current = true;
+
+        translateX.stopAnimation(() => {
             currentOffset.current = 0;
-            translateX.flattenOffset();
-            Animated.spring(translateX, {
+            Animated.timing(translateX, {
                 toValue: 0,
+                duration: 160,
+                easing: Easing.out(Easing.cubic),
                 useNativeDriver: true,
-                tension: 40,
-                friction: 8,
-                velocity: 0,
-            }).start((finished) => {
-                if (finished && isMountedRef.current) {
-                    translateX.setValue(0);
-                }
+            }).start(() => {
+                isClosingRef.current = false;
                 if (isMountedRef.current) {
                     onSwipeClose();
                 }
             });
-            return;
-        }
-
-        translateX.stopAnimation((currentValue) => {
-            translateX.flattenOffset();
-            const actualValue = currentOffset.current + (currentValue || 0);
-            const swipeThreshold = -120;
-
-            if (actualValue < swipeThreshold && actualValue > -240) {
-                // 在动画开始前就调用 onSwipeOpen，确保立即关闭其他菜单
-                onSwipeOpen();
-                currentOffset.current = -240;
-                Animated.spring(translateX, {
-                    toValue: -240,
-                    useNativeDriver: true,
-                    tension: 40,
-                    friction: 8,
-                    velocity: 0,
-                }).start();
-            } else {
-                currentOffset.current = 0;
-                Animated.spring(translateX, {
-                    toValue: 0,
-                    useNativeDriver: true,
-                    tension: 40,
-                    friction: 8,
-                    velocity: 0,
-                }).start((finished) => {
-                    if (finished && isMountedRef.current) {
-                        translateX.setValue(0);
-                    }
-                    if (isMountedRef.current) {
-                        onSwipeClose();
-                    }
-                });
-            }
         });
     }
 
@@ -377,6 +321,9 @@ export default function Linkman({
                         transform: [{ translateX }],
                     },
                 ]}
+                // 性能优化：滑动动画更顺滑
+                renderToHardwareTextureAndroid
+                shouldRasterizeIOS
                 {...panResponder.panHandlers}
             >
                 <TouchableOpacity
@@ -431,8 +378,9 @@ const styles = StyleSheet.create({
     swipeableContainer: {
         position: 'relative',
         overflow: 'hidden',
-        zIndex: 1000,
-        elevation: 1000,
+        // 过高的 zIndex/elevation 在 Android 上容易导致合成层抖动、出现“卡一下”
+        zIndex: 1,
+        elevation: 1,
     },
     actionButtonsContainer: {
         position: 'absolute',
@@ -473,6 +421,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingLeft: 16,
         paddingRight: 16,
+        // 聊天列表分隔线：对齐好友列表的行间分隔效果
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: 'rgba(0, 0, 0, 0.1)',
     },
     content: {
         flex: 1,

@@ -10,11 +10,9 @@ const { width: ScreenWidth } = Dimensions.get('window');
 type Props = {
     message: Message;
     openImageViewer: (imageUrl: string) => void;
-    couldDelete: boolean;
-    onLongPress: () => void;
 };
 
-function ImageMessage({ message, openImageViewer, couldDelete, onLongPress }: Props) {
+function ImageMessage({ message, openImageViewer }: Props) {
     const maxWidth = ScreenWidth - 130 - 16;
     const maxHeight = 200;
     let scale = 1;
@@ -39,7 +37,7 @@ function ImageMessage({ message, openImageViewer, couldDelete, onLongPress }: Pr
 
     return (
         <View style={[styles.container, { width: width * scale, height: height * scale }]}>
-            <TouchableOpacity onPress={handleImageClick} {...(couldDelete ? { onLongPress } : {})}>
+            <TouchableOpacity onPress={handleImageClick}>
                 <Image
                     src={message.content}
                     style={{ width: width * scale, height: height * scale }}

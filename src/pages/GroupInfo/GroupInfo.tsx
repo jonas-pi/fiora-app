@@ -30,7 +30,7 @@ function GroupInfo({ group }: Props) {
         if (currentLinkman._id === group._id) {
             Actions.popTo('chat');
         } else {
-            Actions.popTo('_chatlist');
+            Actions.popTo('chatlist');
             Actions.push('chat', { title: group.name });
         }
     }
@@ -48,7 +48,7 @@ function GroupInfo({ group }: Props) {
             action.addLinkmanHistoryMessages(_id, messages);
             action.setFocus(_id);
 
-            Actions.popTo('_chatlist');
+            Actions.popTo('chatlist');
             Actions.push('chat', { title: newLinkman.name });
         }
     }
