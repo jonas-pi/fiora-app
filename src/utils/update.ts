@@ -22,8 +22,9 @@ export type UpdateManifest = {
     };
 };
 
-// 这里先用占位域名，后续服务端上线后替换即可
-export const DEFAULT_UPDATE_MANIFEST_URL = 'https://your-domain.com/fiora-app/update/latest.json';
+// 固定入口：更新清单（manifest）URL
+// 按你提供的文档约定，服务端应部署该静态 JSON
+export const DEFAULT_UPDATE_MANIFEST_URL = 'https://fiora.nasforjonas.xyz/fiora-app/update/latest.json';
 
 /**
  * 语义化版本比较
@@ -48,7 +49,8 @@ async function fetchJsonWithTimeout(url: string, timeoutMs = 8000) {
     try {
         const res = await fetch(url, {
             method: 'GET',
-            headers: { 'Cache-Control': 'no-cache' },
+            // 避免缓存干扰（文档要求）
+            headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
             signal: controller.signal as any,
         });
         if (!res.ok) {
@@ -91,6 +93,12 @@ export async function checkForUpdateAndPrompt(params: {
             return;
         }
 
+        // 强更策略：force 或 当前版本低于 minSupportedVersion
+        const isMinSupportedBlocked =
+            !!manifest.minSupportedVersion &&
+            compareSemver(params.currentVersion, manifest.minSupportedVersion) < 0;
+        const isForceUpdate = !!manifest.force || isMinSupportedBlocked;
+
         const title = manifest.title || `发现新版本 ${manifest.version}`;
         const notes = manifest.notes || '是否立即更新？';
 
@@ -102,8 +110,18 @@ export async function checkForUpdateAndPrompt(params: {
 
         const updateUrl = isAndroid ? androidUrl : isIOS ? iosUrl : undefined;
 
+        // 建议打印关键日志，方便排查（文档建议）
+        // eslint-disable-next-line no-console
+        console.log('[update] manifestUrl=', params.manifestUrl || DEFAULT_UPDATE_MANIFEST_URL);
+        // eslint-disable-next-line no-console
+        console.log('[update] currentVersion=', params.currentVersion, 'manifest.version=', manifest.version);
+        // eslint-disable-next-line no-console
+        console.log('[update] force=', !!manifest.force, 'minSupportedVersion=', manifest.minSupportedVersion);
+        // eslint-disable-next-line no-console
+        console.log('[update] updateUrl=', updateUrl);
+
         const buttons: any[] = [];
-        if (!manifest.force) {
+        if (!isForceUpdate) {
             buttons.push({ text: '稍后', style: 'cancel' });
         }
         buttons.push({
@@ -121,7 +139,11 @@ export async function checkForUpdateAndPrompt(params: {
             },
         });
 
-        Alert.alert(title, notes, buttons, { cancelable: !manifest.force });
+        const finalNotes = isMinSupportedBlocked
+            ? `当前版本过低（最低支持 ${manifest.minSupportedVersion}），需要更新后才能继续使用。\n\n${notes}`
+            : notes;
+
+        Alert.alert(title, finalNotes, buttons, { cancelable: !isForceUpdate });
     } catch (e: any) {
         Toast.danger(`检查更新失败: ${e?.message || e}`);
     }

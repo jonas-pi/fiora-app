@@ -2,9 +2,9 @@
 
 本文档描述 **服务端需要提供的更新清单协议**，以及客户端当前实现/后续扩展为“自动下载+安装”的路线。
 
-### 1. 更新清单（manifest）接口
+### 1. 更新清单（manifest）接口（服务端必须提供）
 
-- **URL（示例）**：`https://your-domain.com/fiora-app/update/latest.json`
+- **URL（固定）**：`https://fiora.nasforjonas.xyz/fiora-app/update/latest.json`
 - **方法**：GET
 - **缓存**：建议服务端返回 `Cache-Control: no-cache`，或客户端侧加版本参数避免缓存。
 - **返回**：JSON
@@ -38,7 +38,7 @@
 - **notes**：可选。更新说明，建议支持 `\n` 换行。
 - **force**：可选。是否强制更新。为 `true` 时客户端不提供“稍后”按钮。
 - **minSupportedVersion**：可选。最低支持版本（用于强更策略）。客户端后续可扩展：若当前版本 < minSupportedVersion，则强制更新。
-- **android.apkUrl**：Android 必须（若希望 Android 可更新）。APK 下载地址。
+- **android.apkUrl**：Android 必须（若希望 Android 可更新）。APK 下载直链地址（HTTPS）。
 - **android.sha256 / android.size**：可选。用于客户端校验下载完整性/显示大小。
 - **ios.appStoreUrl**：建议提供。iOS 主流做法走 App Store 更新。
 - **ios.ipaUrl**：可选。企业签/自分发时使用（实现复杂，需额外原生能力/MDM）。
@@ -200,6 +200,7 @@ location /fiora-app/apk/ {
 - 点击“检查更新”会拉取 manifest
 - 若有更新：弹窗展示 `title/notes`，点击“立即更新”会打开 `apkUrl/appStoreUrl`
 - 若无更新：提示“已经是最新版本”
+ - 强更：`force=true` 或 `currentVersion < minSupportedVersion` 时，不提供“稍后”按钮
 
 > 说明：当前版本是“可用的最小实现”，优点是**不需要额外原生改造**，缺点是 Android 可能需要跳转浏览器下载，再由用户手动安装。
 
